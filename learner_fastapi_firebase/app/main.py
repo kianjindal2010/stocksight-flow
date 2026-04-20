@@ -17,6 +17,7 @@ from .firebase import get_firestore_client, initialize_firebase, verify_id_token
 from .services.emailer import EmailService
 from .services.firestore_repo import FirestoreRepository
 from .services.ai_advisor import AIAdvisorService
+from .services.chat_context import build_ai_chat_context
 from .services.learning_engine import LearningEngine
 from .services.market_data import MarketDataService
 
@@ -842,16 +843,13 @@ def create_app() -> FastAPI:
             return _redirect("/ai-chat", error="Please type a question for the AI coach.")
 
         history = _load_chat_history(uid, market)
-        context_payload = {
-            "market": market,
-            "dashboard": app.state.learning_engine.dashboard(uid, market),
-            "portfolio": app.state.repo.get_portfolio(uid, market),
-            "health": app.state.learning_engine.health_score(uid, market),
-            "mistakes": app.state.learning_engine.mistake_detection(uid, market),
-            "weekly_summary": app.state.learning_engine.weekly_summary(uid, market),
-            "market_mood": app.state.market_data.market_mood(market),
-            "news": app.state.market_data.market_news(market, limit=5),
-        }
+        context_payload = build_ai_chat_context(
+            uid=uid,
+            market=market,
+            repo=app.state.repo,
+            learning_engine=app.state.learning_engine,
+            market_data=app.state.market_data,
+        )
         ai_response = app.state.ai_advisor.chat_reply(
             uid=uid,
             market=market,

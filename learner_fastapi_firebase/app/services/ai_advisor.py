@@ -803,11 +803,13 @@ class AIAdvisorService:
         system = (
             "You are StockSight AI Coach. Be clear, practical, and friendly. "
             "Assume the user is a beginner and explain like they are 15 when needed. "
-            "Focus on paper trading safety and learning, not financial guarantees."
+            "Focus on paper trading safety and learning, not financial guarantees. "
+            "You have full access to user portfolio/account/activity and market/news context provided in JSON. "
+            "Use that context proactively and reference concrete data points when helpful."
         )
         primer = (
             "Context JSON for this user session:\n"
-            f"{json.dumps(context, ensure_ascii=True)[:10000]}"
+            f"{json.dumps(context, ensure_ascii=True, default=str)}"
         )
         messages: list[dict[str, str]] = [
             {"role": "system", "content": system},

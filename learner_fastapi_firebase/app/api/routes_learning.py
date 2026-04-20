@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..dependencies import current_uid, get_repository
 from ..schemas.learning import ChecklistRequest
+from ..services.chat_context import build_ai_chat_context
 
 
 router = APIRouter(prefix="/api/learning", tags=["learning"])
@@ -166,16 +167,13 @@ def learning_chat_post(payload: dict, request: Request, uid: str = Depends(curre
 
     doc = repo.get_learning_doc(uid, _chat_doc_id(market), default={"messages": []})
     history = _chat_rows(doc.get("messages"))
-    context_payload = {
-        "market": market,
-        "dashboard": request.app.state.learning_engine.dashboard(uid, market),
-        "portfolio": repo.get_portfolio(uid, market),
-        "health": request.app.state.learning_engine.health_score(uid, market),
-        "mistakes": request.app.state.learning_engine.mistake_detection(uid, market),
-        "weekly_summary": request.app.state.learning_engine.weekly_summary(uid, market),
-        "market_mood": request.app.state.market_data.market_mood(market),
-        "news": request.app.state.market_data.market_news(market, limit=5),
-    }
+    context_payload = build_ai_chat_context(
+        uid=uid,
+        market=market,
+        repo=repo,
+        learning_engine=request.app.state.learning_engine,
+        market_data=request.app.state.market_data,
+    )
     reply = request.app.state.ai_advisor.chat_reply(
         uid=uid,
         market=market,
