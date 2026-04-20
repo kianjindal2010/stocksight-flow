@@ -30,6 +30,19 @@ def _score_1_to_100(value: Any, default: int = 50) -> int:
     return int(round(_clamp(_f(value, default), 1, 100)))
 
 
+def _money(value: Any, market: str) -> str:
+    symbol = "$" if str(market).upper() == "US" else "₹"
+    return f"{symbol}{_f(value):,.2f}"
+
+
+def _position_change_pct(position: dict[str, Any]) -> float:
+    avg = _f(position.get("avg_price"), 0.0)
+    if avg <= 0:
+        return 0.0
+    last = _f(position.get("last_price"), avg)
+    return ((last - avg) / avg) * 100
+
+
 def _valid_api_key(value: str) -> bool:
     token = (value or "").strip()
     if not token:
@@ -92,15 +105,26 @@ class AIAdvisorService:
     def _stream_chat(self, messages: list[dict[str, str]], max_tokens: int = 1400) -> str:
         if not self._client:
             return ""
-        stream = self._client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=0.45,
-            top_p=0.95,
-            max_tokens=max_tokens,
-            extra_body={"chat_template_kwargs": {"thinking": True}},
-            stream=True,
-        )
+        try:
+            stream = self._client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.45,
+                top_p=0.95,
+                max_tokens=max_tokens,
+                extra_body={"chat_template_kwargs": {"thinking": True}},
+                stream=True,
+            )
+        except Exception:
+            # Some providers/models reject extra_body keys; retry with a plain call.
+            stream = self._client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.45,
+                top_p=0.95,
+                max_tokens=max_tokens,
+                stream=True,
+            )
         content_parts: list[str] = []
         for chunk in stream:
             if not getattr(chunk, "choices", None):
@@ -634,13 +658,120 @@ class AIAdvisorService:
             max_tokens=700,
         )
 
-    def _chat_fallback(self, market: str, message: str) -> dict[str, Any]:
+    def _chat_fallback(
+        self,
+        market: str,
+        message: str,
+        context: dict[str, Any] | None = None,
+        history: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         prompt = message.strip() or "your last question"
+        context = context or {}
+        portfolio = context.get("portfolio") or {}
+        positions = portfolio.get("positions") or []
+        mood = context.get("market_mood") or {}
+        health = context.get("health") or {}
+        mistakes = (context.get("mistakes") or {}).get("mistakes") or []
+        lower = prompt.lower()
+
+        cash = _money(portfolio.get("cash"), market)
+        invested = _money(portfolio.get("market_value"), market)
+        total = _money(portfolio.get("total_value"), market)
+        holdings = len(positions)
+
+        top_position = None
+        worst_position = None
+        if positions:
+            ranked = sorted(
+                positions,
+                key=lambda row: _f(row.get("market_value"), 0.0),
+                reverse=True,
+            )
+            top_position = ranked[0]
+            worst_position = min(positions, key=_position_change_pct)
+
+        def _symbol(row: dict[str, Any] | None, default: str = "N/A") -> str:
+            if not row:
+                return default
+            raw = str(row.get("symbol") or "").strip().upper()
+            return raw or default
+
+        def _price(row: dict[str, Any] | None) -> float:
+            if not row:
+                return 0.0
+            return max(0.0, _f(row.get("last_price"), _f(row.get("avg_price"), 0.0)))
+
+        def _format_basic_snapshot() -> str:
+            if holdings == 0:
+                return (
+                    f"Right now you have no active positions. Your practice account is {total} "
+                    f"all in cash ({cash})."
+                )
+            biggest = _symbol(top_position)
+            biggest_weight = 0.0
+            total_value = _f(portfolio.get("total_value"), 0.0)
+            if total_value > 0 and top_position:
+                biggest_weight = (_f(top_position.get("market_value"), 0.0) / total_value) * 100
+            return (
+                f"Right now your practice account is worth {total}. You have {cash} cash and {invested} invested "
+                f"across {holdings} stock(s). Your biggest position is {biggest} at about {biggest_weight:.1f}% "
+                "of your account."
+            )
+
+        if "like i am 15" in lower or "explain my portfolio" in lower or "eli5" in lower:
+            reply_text = (
+                "Think of your portfolio like a football team.\n"
+                f"- Cash ({cash}) is your bench strength.\n"
+                "- Stocks are players currently on the field.\n"
+                f"- Total score right now is {total}.\n"
+                f"{_format_basic_snapshot()}\n"
+                "Simple rule: keep any one player from becoming too big, so one bad game does not sink the team."
+            )
+        elif "weakest position" in lower or ("worst" in lower and "position" in lower):
+            if not worst_position:
+                reply_text = (
+                    f"You currently have no open positions in {market}. "
+                    "Use this paper-trading plan: Entry after you write a 1-line thesis, Stop at -3%, Exit at +6%."
+                )
+            else:
+                symbol = _symbol(worst_position)
+                last = _price(worst_position)
+                stop = last * 0.96 if last > 0 else 0.0
+                target = last * 1.08 if last > 0 else 0.0
+                entry_low = last * 0.995 if last > 0 else 0.0
+                entry_high = last * 1.005 if last > 0 else 0.0
+                reply_text = (
+                    f"Weakest current position: {symbol} ({_position_change_pct(worst_position):.1f}% vs avg price).\n"
+                    f"Entry: {_money(entry_low, market)} to {_money(entry_high, market)} only if thesis is still valid.\n"
+                    f"Stop: {_money(stop, market)} (about -4% from now).\n"
+                    f"Exit: {_money(target, market)} (about +8% from now) or earlier if momentum weakens."
+                )
+        elif "market mood" in lower:
+            mood_label = str(mood.get("classification") or "Neutral")
+            mood_score = _f(mood.get("score"), 50.0)
+            reply_text = (
+                f"Market mood is {mood_label} ({mood_score:.0f}/100). "
+                "When mood is weaker, treat new entries like yellow lights: smaller size and tighter risk. "
+                "When mood is stronger, still follow your stop before entering."
+            )
+        elif "improve" in lower and "next" in lower and "trade" in lower:
+            health_score = int(round(_f(health.get("score"), 50.0)))
+            top_mistake = str(mistakes[0]) if mistakes else "No major behavioral red flags detected."
+            reply_text = (
+                f"Best improvement before your next paper trade: raise your process score (currently {health_score}/100).\n"
+                f"Main issue to fix first: {top_mistake}\n"
+                "Use this checklist: Entry only with a clear thesis, Stop pre-decided before buy, Exit target written in advance."
+            )
+        else:
+            prior_turns = len(history or [])
+            reply_text = (
+                f"{_format_basic_snapshot()} You asked: \"{prompt}\".\n"
+                "Short plan: define Entry (why now), Stop (max loss), Exit (profit or invalid thesis). "
+                f"I can also break this down per holding. (Context turns: {prior_turns})"
+            )
+
         return {
-            "reply": (
-                f"I can help with {market} paper trading, risk, and portfolio learning. "
-                f"For now, start with this: restate `{prompt}` as a simple plan with entry, stop, and exit rules."
-            ),
+            "reply": reply_text,
             "source": "rule_based",
             "generated_at": _now_iso(),
             "model": self.model if self._enabled else "rule-based",
@@ -656,10 +787,10 @@ class AIAdvisorService:
     ) -> dict[str, Any]:
         text = str(message or "").strip()
         if not text:
-            return self._chat_fallback(market, "your question")
+            return self._chat_fallback(market, "your question", context=context, history=history)
 
         if not self._enabled:
-            return self._chat_fallback(market, text)
+            return self._chat_fallback(market, text, context=context, history=history)
 
         context = context or {}
         safe_history = []
@@ -688,7 +819,7 @@ class AIAdvisorService:
             reply = self._stream_chat(messages, max_tokens=1100)
             cleaned = reply.strip()
             if not cleaned:
-                return self._chat_fallback(market, text)
+                return self._chat_fallback(market, text, context=context, history=history)
             return {
                 "reply": cleaned,
                 "source": "nvidia_llm",
@@ -696,4 +827,4 @@ class AIAdvisorService:
                 "model": self.model,
             }
         except Exception:
-            return self._chat_fallback(market, text)
+            return self._chat_fallback(market, text, context=context, history=history)
