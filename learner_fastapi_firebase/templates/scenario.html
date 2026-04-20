@@ -1,0 +1,45 @@
+{% extends "layout.html" %}
+
+{% block title %} - Scenario Simulator{% endblock %}
+
+{% block main %}
+<div class="scenario-wrap">
+    <div class="card scenario-card">
+        <div class="section-header">
+            <h2 class="section-title mb-1">Scenario Simulator</h2>
+            <p class="section-subtitle mb-0">Test "what if" outcomes before taking action.</p>
+        </div>
+        <div class="card-body">
+            <form method="get" action="/scenario-simulator" class="row g-2 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">Market Move (%)</label>
+                    <input class="form-control" name="market_move_pct" type="number" step="0.1" value="{{ market_move_pct }}">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Add Cash</label>
+                    <input class="form-control" name="add_cash" type="number" step="0.01" value="{{ add_cash }}">
+                </div>
+                <div class="col-12">
+                    <button class="btn btn-primary" type="submit">Run Scenario</button>
+                </div>
+            </form>
+            <div class="row g-3">
+                <div class="col-md-4"><div class="context-card p-3"><div class="context-label">Current Value</div><div class="context-value h4">Rs.{{ "%.2f"|format(current_value or 0) }}</div></div></div>
+                <div class="col-md-4"><div class="context-card p-3"><div class="context-label">Scenario Value</div><div class="context-value h4">Rs.{{ "%.2f"|format(scenario_value or 0) }}</div></div></div>
+                <div class="col-md-4"><div class="context-card p-3"><div class="context-label">Delta</div><div class="context-value h4 {% if delta_pct >= 0 %}performance-up{% else %}performance-down{% endif %}">{{ "%+.2f"|format(delta_pct or 0) }}%</div></div></div>
+            </div>
+            <div class="card mt-3 ai-inline-card">
+                <div class="card-body">
+                    <h5 class="mb-2">{{ scenario_tip.title }}</h5>
+                    <p class="mb-2">{{ scenario_tip.explain_like_15 }}</p>
+                    <ul class="mb-0">
+                        {% for row in scenario_tip.steps %}
+                        <li>{{ row }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

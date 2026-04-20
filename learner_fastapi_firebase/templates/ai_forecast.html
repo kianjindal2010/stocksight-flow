@@ -1,0 +1,56 @@
+{% extends "layout.html" %}
+
+{% block title %} - AI Forecast{% endblock %}
+
+{% block main %}
+<div class="ai-page">
+    <div class="card ai-card">
+        <div class="ai-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
+            <div>
+                <h2 class="ai-title mb-1">AI Forecast Lite</h2>
+                <p class="ai-subtitle mb-0">Human-readable directional signal.</p>
+            </div>
+            <form method="get" action="/ai-forecast" class="d-flex gap-2">
+                <input class="form-control" name="symbol" value="{{ symbol or '' }}" placeholder="Symbol">
+                <button class="btn btn-outline-primary">Run</button>
+            </form>
+        </div>
+        <div class="ai-body">
+            <div class="row g-3 mb-3">
+                <div class="col-md-4"><div class="context-card p-3"><div class="context-label">Direction</div><div class="context-value h4">{{ forecast.direction }}</div></div></div>
+                <div class="col-md-4"><div class="context-card p-3"><div class="context-label">Confidence</div><div class="context-value h4">{{ "%.0f"|format((forecast.confidence or 0) * 100) }}%</div></div></div>
+                <div class="col-md-4"><div class="context-card p-3"><div class="context-label">Action</div><div class="context-value h6">{{ forecast.recommended_action }}</div></div></div>
+            </div>
+            <p><strong>Reason:</strong> {{ forecast.simple_reason }}</p>
+            <p><strong>Model Meaning:</strong> {{ forecast.model_meaning }}</p>
+
+            <div class="card mt-3 ai-inline-card">
+                <div class="card-body">
+                    <h5 class="mb-2">AI Forecast Coach</h5>
+                    <p class="mb-2">{{ forecast_ai.quick_take }}</p>
+                    <p class="text-muted mb-2"><strong>Explain Like I'm 15:</strong> {{ forecast_ai.explain_like_15 }}</p>
+                    <p class="text-muted mb-2"><strong>Portfolio Connection:</strong> {{ forecast_ai.portfolio_link }}</p>
+                    <ul class="mb-0">
+                        {% for row in forecast_ai.next_steps %}
+                        <li>{{ row }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card mt-3 ai-inline-card">
+                <div class="card-body">
+                    <h5 class="mb-2">Your Portfolio, Explained Simply</h5>
+                    <p class="mb-2">{{ portfolio_explainer.plain_english }}</p>
+                    <p class="text-muted mb-2"><strong>Analogy:</strong> {{ portfolio_explainer.analogy }}</p>
+                    <ul class="mb-0">
+                        {% for row in portfolio_explainer.next_steps %}
+                        <li>{{ row }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

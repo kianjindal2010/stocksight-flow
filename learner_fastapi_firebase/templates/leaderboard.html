@@ -1,0 +1,36 @@
+{% extends "layout.html" %}
+
+{% block title %} - Leaderboard{% endblock %}
+
+{% block main %}
+<div class="board-page">
+    <div class="card board-card">
+        <div class="board-header">
+            <h2 class="board-title mb-1">Learning Leaderboard</h2>
+            <p class="board-subtitle mb-0">Gamification rewards consistency and good habits.</p>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="context-card p-3">
+                        <div class="context-label">Learning Streak</div>
+                        <div class="context-value h3">{{ streaks.learning_streak_days or 0 }} days</div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="context-card p-3">
+                        <div class="context-label">Quiz Streak</div>
+                        <div class="context-value h3">{{ streaks.quiz_streak_days or 0 }} days</div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="context-card p-3">
+                        <div class="context-label">Quizzes Completed</div>
+                        <div class="context-value h3">{{ quizzes.completed or 0 }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

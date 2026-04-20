@@ -1,0 +1,54 @@
+{% extends "layout.html" %}
+
+{% block title %} - Portfolio Goals{% endblock %}
+
+{% block main %}
+<div class="goals-wrap">
+    <div class="card goals-card mb-4">
+        <div class="section-header">
+            <h2 class="section-title mb-1">Set Your Portfolio Goal</h2>
+            <p class="section-subtitle mb-0">Track progress toward value and return targets.</p>
+        </div>
+        <div class="card-body">
+            <form method="post" action="/portfolio-goals" class="row g-2">
+                <div class="col-md-6">
+                    <label class="form-label">Target Value (Rs.)</label>
+                    <input class="form-control" name="target_value" type="number" step="0.01" value="{{ goal.target_value or 0 }}" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Target Return (%)</label>
+                    <input class="form-control" name="target_return_pct" type="number" step="0.01" value="{{ goal.target_return_pct or 0 }}" required>
+                </div>
+                <div class="col-12">
+                    <button class="btn btn-primary w-100" type="submit">Save Goal</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card goals-card">
+        <div class="section-header">
+            <h2 class="section-title mb-1">Progress</h2>
+            <p class="section-subtitle mb-0">Current portfolio value and return progress.</p>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <div class="context-card p-3">
+                        <div class="context-label">Current Value</div>
+                        <div class="context-value h3 mb-0">Rs.{{ "%.2f"|format(portfolio.total_value or 0) }}</div>
+                        <div class="small text-muted mt-1">{{ "%.2f"|format(progress_value or 0) }}% of target</div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="context-card p-3">
+                        <div class="context-label">Current Return</div>
+                        <div class="context-value h3 mb-0">{{ "%.2f"|format(performance.return_total_pct or 0) }}%</div>
+                        <div class="small text-muted mt-1">{{ "%.2f"|format(progress_return or 0) }}% of target</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,42 @@
+{% extends "layout.html" %}
+
+{% block title %} - Sell{% endblock %}
+
+{% block main %}
+<div class="sell-page">
+    <div class="card sell-card">
+        <div class="sell-card-header">
+            <h2 class="sell-title mb-1">Sell Shares</h2>
+            <p class="sell-subtitle mb-0">Choose from positions you already own.</p>
+        </div>
+        <div class="sell-card-body">
+            {% if owned_symbols %}
+            <form method="post" action="/sell">
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Stock</label>
+                    <select class="form-select" name="symbol" required>
+                        {% for symbol in owned_symbols %}
+                        <option value="{{ symbol }}">{{ symbol }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Shares</label>
+                    <input class="form-control" name="quantity" type="number" min="1" placeholder="Number of shares" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Notes (optional)</label>
+                    <input class="form-control" name="notes" placeholder="Exit reason or risk action">
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-danger" type="submit">Place Sell Order</button>
+                    <a class="btn btn-outline-secondary" href="/">Back to Dashboard</a>
+                </div>
+            </form>
+            {% else %}
+            <div class="alert alert-info mb-0">You do not currently own any stocks to sell.</div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

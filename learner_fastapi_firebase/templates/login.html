@@ -1,0 +1,119 @@
+{% extends "layout.html" %}
+
+{% block title %} - Log In{% endblock %}
+
+{% block guest_main %}
+<style>
+.login-shell { max-width: 980px; margin: 0 auto; display: grid; grid-template-columns: 1fr minmax(300px,430px); gap: 1rem; align-items: stretch; }
+.login-brand-panel { border-radius: 22px; padding: 1.45rem 1.55rem; background: linear-gradient(135deg,#1d4ed8,#0b1220); color: #fff; box-shadow: 0 24px 38px rgba(11,18,32,.24); }
+.login-card { border-radius: 22px; border: 1px solid rgba(15,23,42,.1); padding: 1.45rem; background: rgba(255,255,255,.92); box-shadow: 0 18px 34px rgba(15,23,42,.1); }
+@media (max-width: 920px) { .login-shell { grid-template-columns: 1fr; } }
+</style>
+<div class="login-shell">
+    <section class="login-brand-panel">
+        <h1>Welcome to StockSight Learner</h1>
+        <p>Firebase-powered authentication with a learner-first market workspace.</p>
+        <div class="login-highlights">
+            <span>Paper trading only</span>
+            <span>Guided curriculum and feedback</span>
+            <span>No pro/admin complexity</span>
+        </div>
+    </section>
+    <section class="login-card">
+        <h2>Sign in</h2>
+        <p>Use email/password or Firebase Google Sign-In.</p>
+        <form id="loginForm">
+            <div class="mb-3"><label class="form-label">Email</label><input id="email" class="form-control" type="email" required></div>
+            <div class="mb-3"><label class="form-label">Password</label><input id="password" class="form-control" type="password" required></div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" type="submit">Log In</button>
+                <a class="btn btn-outline-secondary" href="/register">Create account</a>
+            </div>
+        </form>
+        <hr>
+        <button class="btn btn-outline-primary btn-sm" id="googlePopupBtn" type="button">Sign in with Google</button>
+        <details class="mt-3">
+            <summary class="small text-muted">Have an ID token already?</summary>
+            <div class="mb-2 mt-2"><label class="form-label">Google/Firebase ID Token</label><textarea id="googleToken" class="form-control" rows="3" placeholder="Paste Firebase ID token"></textarea></div>
+            <button class="btn btn-outline-secondary btn-sm" id="googleBtn" type="button">Sign in with Token</button>
+        </details>
+        <div id="loginMsg" class="small mt-3 text-danger"></div>
+    </section>
+</div>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+
+const msg = document.getElementById("loginMsg");
+const webApiKey = {{ firebase_web_api_key|tojson }};
+const projectId = {{ firebase_project_id|tojson }};
+const authDomain = {{ firebase_auth_domain|tojson }};
+let popupAuth = null;
+
+if (webApiKey && projectId) {
+    const app = initializeApp({ apiKey: webApiKey, projectId: projectId, authDomain: authDomain || `${projectId}.firebaseapp.com` });
+    popupAuth = getAuth(app);
+}
+
+document.getElementById("googlePopupBtn").addEventListener("click", async () => {
+    msg.textContent = "";
+    if (!popupAuth) {
+        msg.textContent = "Firebase web config is missing. Set FIREBASE_WEB_API_KEY and FIREBASE_PROJECT_ID.";
+        return;
+    }
+    try {
+        const provider = new GoogleAuthProvider();
+        const credential = await signInWithPopup(popupAuth, provider);
+        const idToken = await credential.user.getIdToken();
+        const res = await fetch("/api/auth/google", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id_token: idToken }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            msg.textContent = data.detail || "Google sign-in failed";
+            return;
+        }
+        window.location.href = "/";
+    } catch (err) {
+        msg.textContent = String(err);
+    }
+});
+</script>
+<script>
+const msg = document.getElementById("loginMsg");
+document.getElementById("loginForm").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    msg.textContent = "";
+    const payload = {
+        email: document.getElementById("email").value.trim(),
+        password: document.getElementById("password").value,
+    };
+    const res = await fetch("/api/auth/login", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) { msg.textContent = data.detail || "Login failed"; return; }
+    window.location.href = "/";
+});
+document.getElementById("googleBtn").addEventListener("click", async () => {
+    msg.textContent = "";
+    const token = document.getElementById("googleToken").value.trim();
+    if (!token) { msg.textContent = "Paste a Firebase ID token first."; return; }
+    const res = await fetch("/api/auth/google", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id_token: token }),
+    });
+    const data = await res.json();
+    if (!res.ok) { msg.textContent = data.detail || "Google token login failed"; return; }
+    window.location.href = "/";
+});
+</script>
+{% endblock %}

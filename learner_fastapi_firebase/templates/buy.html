@@ -1,0 +1,35 @@
+{% extends "layout.html" %}
+
+{% block title %} - Buy{% endblock %}
+
+{% block main %}
+<div class="trade-page">
+    <div class="card trade-card">
+        <div class="trade-card-header">
+            <h2 class="trade-title mb-1">Buy Shares</h2>
+            <p class="trade-subtitle mb-0">Search by ticker or company name. We'll resolve it for you live.</p>
+        </div>
+        <div class="trade-card-body">
+            <form method="post" action="/buy">
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Stock</label>
+                    <input class="form-control" name="symbol" placeholder="e.g. Apple or AAPL" required>
+                    <div class="chip mt-2">Market: {{ market }}</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Shares</label>
+                    <input class="form-control" name="quantity" type="number" min="1" placeholder="Number of shares" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Notes (optional)</label>
+                    <input class="form-control" name="notes" placeholder="Why are you entering this trade?">
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-primary" type="submit">Place Buy Order</button>
+                    <a class="btn btn-outline-secondary" href="/">Back to Dashboard</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

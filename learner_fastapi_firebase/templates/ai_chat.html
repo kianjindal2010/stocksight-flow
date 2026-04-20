@@ -1,0 +1,53 @@
+{% extends "layout.html" %}
+
+{% block title %} - AI Chat{% endblock %}
+
+{% block main %}
+<div class="chat-page">
+    <div class="card chat-card">
+        <div class="section-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <h2 class="section-title mb-1">AI Trading Coach Chat</h2>
+                <p class="section-subtitle mb-0">Ask anything about your portfolio, risk, and paper trades.</p>
+            </div>
+            <form method="post" action="/ai-chat/clear">
+                <button class="btn btn-outline-secondary btn-sm" type="submit">Clear Chat</button>
+            </form>
+        </div>
+
+        <div class="card-body">
+            <div class="ai-chat-window mb-3">
+                {% if chat_history %}
+                    {% for row in chat_history %}
+                    <div class="chat-row {% if row.role == 'user' %}chat-user{% else %}chat-assistant{% endif %}">
+                        <div class="chat-bubble">
+                            <div class="chat-role">{{ "You" if row.role == "user" else "AI Coach" }}</div>
+                            <div class="chat-content">{{ row.content }}</div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                <div class="text-muted mb-2">No chat yet. Try one of these starters:</div>
+                <ul class="mb-0">
+                    {% for row in chat_starters %}
+                    <li>{{ row }}</li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+            </div>
+
+            <form method="post" action="/ai-chat" class="d-flex gap-2 align-items-start">
+                <textarea
+                    class="form-control"
+                    name="message"
+                    rows="3"
+                    maxlength="2000"
+                    placeholder="Ask the AI coach anything about your paper trades..."
+                    required
+                ></textarea>
+                <button class="btn btn-primary" type="submit">Send</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

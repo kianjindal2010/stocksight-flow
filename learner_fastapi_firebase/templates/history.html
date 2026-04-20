@@ -1,0 +1,49 @@
+{% extends "layout.html" %}
+
+{% block title %} - Trade History{% endblock %}
+
+{% block main %}
+<div class="history-page">
+    <div class="card history-card">
+        <div class="history-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
+            <div>
+                <h2 class="history-title mb-1">Transaction History</h2>
+                <p class="history-subtitle mb-0">Review every trade you've made.</p>
+            </div>
+            <form method="get" action="/history" class="d-flex gap-2">
+                <span class="chip">Total trades: {{ trades|length }}</span>
+                <input class="form-control form-control-sm" name="q" value="{{ filter_q or '' }}" placeholder="Filter by symbol or type">
+            </form>
+        </div>
+        <div class="card-body table-responsive">
+            <table class="table align-middle">
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Symbol</th>
+                        <th>Shares</th>
+                        <th>Price</th>
+                        <th>P/L</th>
+                        <th>Transacted</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in trades %}
+                    <tr>
+                        <td class="text-uppercase">{{ row.side }}</td>
+                        <td>{{ row.symbol }}</td>
+                        <td>{{ row.quantity }}</td>
+                        <td>Rs.{{ "%.2f"|format(row.price or 0) }}</td>
+                        <td class="{% if row.realized_pnl >= 0 %}performance-up{% else %}performance-down{% endif %}">Rs.{{ "%.2f"|format(row.realized_pnl or 0) }}</td>
+                        <td>{{ row.created_at[:19] if row.created_at else "-" }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% if not trades %}
+                    <tr><td colspan="6" class="text-muted">No trades found yet.</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

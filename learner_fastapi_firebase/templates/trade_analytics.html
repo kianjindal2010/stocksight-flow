@@ -1,0 +1,67 @@
+{% extends "layout.html" %}
+
+{% block title %} - Trade Analytics{% endblock %}
+
+{% block main %}
+<div class="analytics-wrap">
+    <div class="row g-4 mb-3">
+        <div class="col-md-3">
+            <div class="card analytics-card p-3">
+                <div class="metric-label">Total Trades</div>
+                <div class="metric-value h4">{{ analytics.total_trades }}</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card analytics-card p-3">
+                <div class="metric-label">Buys</div>
+                <div class="metric-value h4">{{ analytics.buy_count }}</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card analytics-card p-3">
+                <div class="metric-label">Sells</div>
+                <div class="metric-value h4">{{ analytics.sell_count }}</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card analytics-card p-3">
+                <div class="metric-label">Realized P/L</div>
+                <div class="metric-value h4 {% if analytics.realized_pnl >= 0 %}performance-up{% else %}performance-down{% endif %}">Rs.{{ "%.2f"|format(analytics.realized_pnl or 0) }}</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card analytics-card">
+        <div class="section-header">
+            <h2 class="section-title mb-0">Recent Trades</h2>
+        </div>
+        <div class="card-body table-responsive">
+            <table class="table align-middle">
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Symbol</th>
+                        <th>Qty</th>
+                        <th>Price</th>
+                        <th>Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in trades %}
+                    <tr>
+                        <td>{{ row.side|upper }}</td>
+                        <td>{{ row.symbol }}</td>
+                        <td>{{ row.quantity }}</td>
+                        <td>Rs.{{ "%.2f"|format(row.price or 0) }}</td>
+                        <td>Rs.{{ "%.2f"|format(row.trade_value or 0) }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% if not trades %}
+                    <tr><td colspan="5" class="text-muted">No trades yet.</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

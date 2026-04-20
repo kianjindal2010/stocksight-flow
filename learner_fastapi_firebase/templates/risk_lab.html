@@ -1,0 +1,45 @@
+{% extends "layout.html" %}
+
+{% block title %} - Risk Lab{% endblock %}
+
+{% block main %}
+<div class="risk-page">
+    <div class="card risk-card">
+        <div class="risk-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
+            <div>
+                <h2 class="risk-title mb-1">Risk Lab Lite</h2>
+                <p class="risk-subtitle mb-0">Simplified risk awareness for beginners.</p>
+            </div>
+            <form method="get" action="/risk-lab" class="d-flex gap-2">
+                <input class="form-control" name="symbol" value="{{ symbol or '' }}" placeholder="Symbol">
+                <button class="btn btn-outline-primary">Analyze</button>
+            </form>
+        </div>
+        <div class="card-body">
+            <div class="row g-3 mb-3">
+                <div class="col-md-4"><div class="context-card p-3"><div class="context-label">Risk Score</div><div class="context-value h4">{{ risk.risk_score }}</div></div></div>
+                <div class="col-md-4"><div class="context-card p-3"><div class="context-label">Volatility</div><div class="context-value h4">{{ risk.volatility_level }}</div></div></div>
+                <div class="col-md-4"><div class="context-card p-3"><div class="context-label">Diversification</div><div class="context-value h6">{{ risk.diversification_status }}</div></div></div>
+            </div>
+            <p><strong>Beta:</strong> {{ risk.beta_plain_english }}</p>
+            <p><strong>Max Loss Warning:</strong> {{ risk.max_loss_warning }}</p>
+            <ul>
+                {% for row in risk.suggestions %}
+                <li>{{ row }}</li>
+                {% endfor %}
+            </ul>
+            <div class="card mt-3 ai-inline-card">
+                <div class="card-body">
+                    <h5 class="mb-2">{{ risk_tip.title }}</h5>
+                    <p class="mb-2">{{ risk_tip.explain_like_15 }}</p>
+                    <ul class="mb-0">
+                        {% for row in risk_tip.steps %}
+                        <li>{{ row }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,54 @@
+{% extends "layout.html" %}
+
+{% block title %} - Watchlist{% endblock %}
+
+{% block main %}
+<div class="summary-wrap">
+    <div class="d-flex justify-content-between align-items-center mb-3 gap-3 flex-wrap">
+        <h2 class="mb-0">My Watchlist</h2>
+        <form class="d-flex gap-2" method="post" action="/watchlist/add">
+            <input class="form-control" name="symbol" placeholder="Add symbol (e.g. AAPL)" required>
+            <button class="btn btn-primary" type="submit">Add</button>
+        </form>
+    </div>
+
+    <div class="card summary-card">
+        <div class="card-body table-responsive">
+            <table class="table align-middle">
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Name</th>
+                        <th>Last Price</th>
+                        <th>1W</th>
+                        <th>1M</th>
+                        <th>Day's Chg</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in watch_rows %}
+                    <tr>
+                        <td><a href="/quote?symbol={{ row.symbol }}">{{ row.symbol }}</a></td>
+                        <td>{{ row.name }}</td>
+                        <td>Rs.{{ "%.2f"|format(row.price or 0) }}</td>
+                        <td class="{% if row.week_change >= 0 %}performance-up{% else %}performance-down{% endif %}">{{ "%+.2f"|format(row.week_change or 0) }}%</td>
+                        <td class="{% if row.month_change >= 0 %}performance-up{% else %}performance-down{% endif %}">{{ "%+.2f"|format(row.month_change or 0) }}%</td>
+                        <td class="{% if row.day_change >= 0 %}performance-up{% else %}performance-down{% endif %}">{{ "%+.2f"|format(row.day_change or 0) }}%</td>
+                        <td>
+                            <form method="post" action="/watchlist/remove">
+                                <input type="hidden" name="symbol" value="{{ row.symbol }}">
+                                <button class="btn btn-sm btn-outline-danger" type="submit">Remove</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not watch_rows %}
+                    <tr><td colspan="7" class="text-muted">Watchlist is empty. Add a symbol to start tracking.</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

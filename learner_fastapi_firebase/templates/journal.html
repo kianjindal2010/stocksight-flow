@@ -1,0 +1,61 @@
+{% extends "layout.html" %}
+
+{% block title %} - Trade Journal{% endblock %}
+
+{% block main %}
+<div class="journal-wrap">
+    <div class="card journal-card">
+        <div class="section-header">
+            <h2 class="section-title mb-1">Trade Journal</h2>
+            <p class="section-subtitle mb-0">Add reasoning and lessons to each trade.</p>
+        </div>
+        <div class="card-body">
+            {% if entries %}
+            <div class="accordion" id="journalAccordion">
+                {% for row in entries %}
+                <div class="accordion-item mb-3 border-0">
+                    <h2 class="accordion-header" id="heading{{ loop.index }}">
+                        <button class="accordion-button {% if not loop.first %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ loop.index }}">
+                            {{ row.trade.symbol }} · {{ row.trade.side|upper }} · {{ row.trade.quantity }} @ Rs.{{ "%.2f"|format(row.trade.price or 0) }}
+                        </button>
+                    </h2>
+                    <div id="collapse{{ loop.index }}" class="accordion-collapse collapse {% if loop.first %}show{% endif %}" data-bs-parent="#journalAccordion">
+                        <div class="accordion-body">
+                            <form method="post" action="/journal/update" class="row g-2">
+                                <input type="hidden" name="trade_id" value="{{ row.trade.id }}">
+                                <div class="col-md-6">
+                                    <label class="form-label">Thesis</label>
+                                    <input class="form-control" name="thesis" value="{{ row.journal.thesis or '' }}">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Reason for Entry</label>
+                                    <input class="form-control" name="reason_for_entry" value="{{ row.journal.reason_for_entry or '' }}">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Reason for Exit</label>
+                                    <input class="form-control" name="reason_for_exit" value="{{ row.journal.reason_for_exit or '' }}">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Lessons Learned</label>
+                                    <input class="form-control" name="lessons_learned" value="{{ row.journal.lessons_learned or '' }}">
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label">Outcome Review</label>
+                                    <input class="form-control" name="outcome_review" value="{{ row.journal.outcome_review or '' }}">
+                                </div>
+                                <div class="col-12">
+                                    <button class="btn btn-primary" type="submit">Save Journal Entry</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-muted mb-0">No trades found yet.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,206 @@
+{% extends "layout.html" %}
+
+{% block title %} - Dashboard{% endblock %}
+
+{% block main %}
+{% set market_name = "India" if market == "INDIA" else "United States" %}
+{% set today_class = "performance-up" if (dashboard.changed_today_pct or 0) >= 0 else "performance-down" %}
+{% set total_class = "performance-up" if (dashboard.simple_return_pct or 0) >= 0 else "performance-down" %}
+{% set benchmark_class = "performance-up" if (benchmark.change_pct or 0) >= 0 else "performance-down" %}
+{% set risk_class = "status-ok" if coach.risk_level == "Low" else ("status-caution" if coach.risk_level == "Medium" else "status-avoid") %}
+
+<div class="dashboard-layout dashboard-v2">
+    <div class="row g-4">
+        <div class="col-12">
+            <div class="sp500-tile dashboard-hero d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                <div>
+                    <div class="sp500-label">{{ market_name|upper }}</div>
+                    <div class="sp500-subtitle">{{ benchmark.label }} - Live paper-trading benchmark</div>
+                    <div class="d-flex align-items-baseline flex-wrap gap-3 mt-2">
+                        <span class="sp500-value">{{ currency_symbol }}{{ "%.2f"|format(benchmark.price or 0) }}</span>
+                        <span class="sp500-change {{ benchmark_class }}">{{ "%+.2f"|format(benchmark.change_pct or 0) }}%</span>
+                    </div>
+                    <div class="dashboard-hero-note">Data refreshes automatically for your selected market.</div>
+                </div>
+                <div class="sp500-pills">
+                    <div class="sp500-pill">
+                        <span class="sp500-pill-label">Paper Trading</span>
+                        <span class="sp500-pill-value">Live</span>
+                    </div>
+                    <div class="sp500-pill">
+                        <span class="sp500-pill-label">Market Status</span>
+                        <span class="sp500-pill-value">Open</span>
+                    </div>
+                    <div class="sp500-pill">
+                        <span class="sp500-pill-label">Learning Progress</span>
+                        <span class="sp500-pill-value">{{ dashboard.learning_progress_pct }}%</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card summary-card summary-card--value h-100">
+                <div class="card-body">
+                    <div class="summary-label">Portfolio Value</div>
+                    <div class="summary-value fw-bold h3 mb-1">{{ currency_symbol }}{{ "%.2f"|format(portfolio.total_value or 0) }}</div>
+                    <div class="summary-subvalue">Total account value</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card summary-card summary-card--today h-100">
+                <div class="card-body">
+                    <div class="summary-label">Return (Today)</div>
+                    <div class="summary-value fw-bold h3 mb-1 {{ today_class }}">{{ "%+.2f"|format(dashboard.changed_today_pct or 0) }}%</div>
+                    <div class="summary-subvalue">Daily paper-trading change</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card summary-card summary-card--total h-100">
+                <div class="card-body">
+                    <div class="summary-label">Return (Total)</div>
+                    <div class="summary-value fw-bold h3 mb-1 {{ total_class }}">{{ "%+.2f"|format(dashboard.simple_return_pct or 0) }}%</div>
+                    <div class="summary-subvalue">Since first simulated investment</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-8">
+            <div class="card portfolio-section-card h-100">
+                <div class="card-header bg-transparent">
+                    <h2 class="section-heading mb-0">My Portfolio</h2>
+                    <p class="section-subtitle mb-0">Paper trades for {{ market_name }} market. Click a symbol to open a quick quote.</p>
+                </div>
+                <div class="card-body table-responsive">
+                    <table class="table portfolio-table align-middle">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Qty</th>
+                                <th>Price Paid</th>
+                                <th>Last Price</th>
+                                <th>Day's Chg</th>
+                                <th>P/L</th>
+                                <th>P/L %</th>
+                                <th>Market Value</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in positions %}
+                            {% set row_class = "performance-up" if (row.change_pct or 0) >= 0 else "performance-down" %}
+                            {% set pnl_class = "performance-up" if (row.unrealized_pnl or 0) >= 0 else "performance-down" %}
+                            <tr>
+                                <td><a href="/quote?symbol={{ row.symbol }}">{{ row.symbol }}</a></td>
+                                <td>{{ row.shares }}</td>
+                                <td>{{ currency_symbol }}{{ "%.2f"|format(row.avg_price or 0) }}</td>
+                                <td>{{ currency_symbol }}{{ "%.2f"|format(row.last_price or 0) }}</td>
+                                <td class="{{ row_class }}">{{ "%+.2f"|format(row.change_pct or 0) }}%</td>
+                                <td class="{{ pnl_class }}">{{ currency_symbol }}{{ "%+.2f"|format(row.unrealized_pnl or 0) }}</td>
+                                <td class="{{ row_class }}">{{ "%+.2f"|format(row.change_pct or 0) }}%</td>
+                                <td>{{ currency_symbol }}{{ "%.2f"|format(row.market_value or 0) }}</td>
+                            </tr>
+                            {% endfor %}
+                            {% if not positions %}
+                            <tr>
+                                <td colspan="8" class="text-muted">No holdings yet. Use <a href="/buy">Buy</a> to place your first paper trade in {{ market_name }}.</td>
+                            </tr>
+                            {% endif %}
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <th colspan="7" class="text-end">Cash</th>
+                                <th>{{ currency_symbol }}{{ "%.2f"|format(portfolio.cash or 0) }}</th>
+                            </tr>
+                            <tr>
+                                <th colspan="7" class="text-end">Grand Total</th>
+                                <th>{{ currency_symbol }}{{ "%.2f"|format(portfolio.total_value or 0) }}</th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4 d-grid gap-3">
+            <div class="card card-metric card-metric-gainers">
+                <div class="card-metric-header metric-tone-gainers">
+                    <div class="card-metric-header-title">Top Performers</div>
+                    <div class="card-metric-subtitle">Best gainers in your portfolio today</div>
+                </div>
+                <div class="list-group list-group-flush">
+                    {% for row in top_positions %}
+                    <div class="list-group-item d-flex justify-content-between metric-list-item">
+                        <span class="metric-list-symbol">{{ row.symbol }}</span>
+                        <span class="performance-up">{{ "%+.2f"|format(row.change_pct or 0) }}%</span>
+                    </div>
+                    {% endfor %}
+                    {% if not top_positions %}
+                    <div class="list-group-item text-muted metric-list-item">No positions yet.</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="card card-metric card-metric-losers">
+                <div class="card-metric-header metric-tone-losers">
+                    <div class="card-metric-header-title">Worst Performers</div>
+                    <div class="card-metric-subtitle">Biggest decliners in your portfolio today</div>
+                </div>
+                <div class="list-group list-group-flush">
+                    {% for row in worst_positions %}
+                    <div class="list-group-item d-flex justify-content-between metric-list-item">
+                        <span class="metric-list-symbol">{{ row.symbol }}</span>
+                        <span class="performance-down">{{ "%+.2f"|format(row.change_pct or 0) }}%</span>
+                    </div>
+                    {% endfor %}
+                    {% if not worst_positions %}
+                    <div class="list-group-item text-muted metric-list-item">No positions yet.</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="card card-metric ai-coach-card">
+                <div class="card-metric-header metric-tone-coach">
+                    <div class="card-metric-header-title">AI Coach</div>
+                    <span class="chip {{ risk_class }}">{{ coach.risk_level }} Risk</span>
+                </div>
+                <div class="card-body">
+                    <p class="fw-semibold mb-2">{{ coach.headline }}</p>
+                    <p class="text-muted-soft small mb-3">{{ coach.summary }}</p>
+                    <div class="summary-label mb-2">Suggested Next Steps</div>
+                    <ul class="coach-list">
+                        {% for step in coach.actions %}
+                        <li>{{ step }}</li>
+                        {% endfor %}
+                    </ul>
+                    <div class="summary-label mt-3 mb-2">News To Watch</div>
+                    <ul class="coach-list">
+                        {% for item in coach.news_watch %}
+                        <li>{{ item }}</li>
+                        {% endfor %}
+                    </ul>
+                    <p class="small text-muted mt-2 mb-0">{{ coach.disclaimer }}</p>
+                </div>
+            </div>
+
+            <div class="card card-metric">
+                <div class="card-metric-header metric-tone-news">
+                    <div class="card-metric-header-title">Market Headlines</div>
+                </div>
+                <div class="list-group list-group-flush">
+                    {% for item in news %}
+                    <a class="list-group-item list-group-item-action metric-list-item" href="{{ item.link }}" target="_blank" rel="noopener">
+                        <div class="fw-semibold">{{ item.title }}</div>
+                        <div class="small text-muted">{{ item.source }}</div>
+                    </a>
+                    {% endfor %}
+                    {% if not news %}
+                    <div class="list-group-item text-muted metric-list-item">No live headlines found right now.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

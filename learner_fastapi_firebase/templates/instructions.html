@@ -1,0 +1,49 @@
+{% extends "layout.html" %}
+
+{% block title %} - Instructions{% endblock %}
+
+{% block main %}
+<style>
+.guide-page { max-width: 980px; margin: 0 auto; }
+.guide-card { border-radius: 1rem; border: 1px solid rgba(15,23,42,.08); box-shadow: 0 16px 36px rgba(15,23,42,.08); background: #fff; }
+.guide-header { padding: 1.75rem 2rem 1rem; border-bottom: 1px solid rgba(15,23,42,.06); }
+.guide-body { padding: 1.5rem 2rem 2rem; }
+</style>
+<div class="guide-page">
+    <div class="guide-card">
+        <div class="guide-header">
+            <h1>How to Use StockSight Learner</h1>
+            <p class="text-muted mb-0">A literacy-first workflow with Firebase auth and paper trading.</p>
+        </div>
+        <div class="guide-body">
+            <h3>Core Backbone</h3>
+            <ul>
+                <li>Account/profile, workspace preferences, and notification settings are persistent per Firebase user.</li>
+                <li>Multi-market switching and benchmark context are available from the top market selector.</li>
+                <li>Search + quick quote is available from dashboard shortcuts and API tools.</li>
+                <li>Watchlists, alerts, portfolio, trade history, and trade journal are all learner-available.</li>
+            </ul>
+
+            <h3>Learner-First Features</h3>
+            <ul>
+                <li>Learning dashboard with progress and recommended next step.</li>
+                <li>Guided curriculum, concept checks, and challenge/milestone tracking.</li>
+                <li>Before-you-trade checklist is required before buy/sell execution.</li>
+                <li>Simplified insights: health score, explain-portfolio, and why-portfolio-moved.</li>
+                <li>Weekly learning loop: mistakes, good decisions, and next concept.</li>
+                <li>Risk Lab Lite and AI Forecast Lite with plain-English interpretation.</li>
+            </ul>
+
+            <h3>What Is Intentionally Not Included</h3>
+            <ul>
+                <li>Advanced quant dashboards and model diagnostics.</li>
+                <li>Derivatives, futures/options depth, and professional strategy tooling.</li>
+                <li>Team/admin/pro collaboration layers and advanced order complexity.</li>
+            </ul>
+
+            <h3>Reminder</h3>
+            <p class="text-muted">This app is for education and practice only. It is not financial advice.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

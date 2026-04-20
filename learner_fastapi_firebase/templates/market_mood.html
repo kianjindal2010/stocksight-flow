@@ -1,0 +1,47 @@
+{% extends "layout.html" %}
+
+{% block title %} - Market Mood{% endblock %}
+
+{% block main %}
+<div class="mood-page">
+    <div class="card mood-card">
+        <div class="mood-header">
+            <h2 class="mood-title mb-1">Market Mood</h2>
+            <p class="mood-subtitle mb-0">Fear / Neutral / Greed in plain English.</p>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="context-card p-3">
+                        <div class="context-label">Classification</div>
+                        <div class="context-value h3">{{ mood.classification }}</div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="context-card p-3">
+                        <div class="context-label">Score</div>
+                        <div class="context-value h3">{{ mood.score }}</div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="context-card p-3">
+                        <div class="context-label">Interpretation</div>
+                        <div class="context-value h6">{{ mood.explanation }}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="card mt-3 ai-inline-card">
+                <div class="card-body">
+                    <h5 class="mb-2">{{ mood_tip.title }}</h5>
+                    <p class="mb-2">{{ mood_tip.explain_like_15 }}</p>
+                    <ul class="mb-0">
+                        {% for row in mood_tip.steps %}
+                        <li>{{ row }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

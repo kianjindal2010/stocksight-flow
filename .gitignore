@@ -1,0 +1,12 @@
+# Secrets / local env
+*.pem
+*.key
+*service-account*.json
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+learner_fastapi_firebase/.venv/
+learner_fastapi_firebase/pytest-cache-files-*/
