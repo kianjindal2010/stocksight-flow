@@ -36,8 +36,24 @@ def search_symbols(request: Request, q: str = Query(..., min_length=1), limit: i
 @router.get("/api/quote/{symbol}")
 def quick_quote(symbol: str, request: Request, uid: str = Depends(current_uid), repo=Depends(get_repository)):
     service = request.app.state.market_data
+    advisor = request.app.state.ai_advisor
     market = repo.get_selected_market(uid)
     resolved = service.resolve_symbol(symbol, market)
     quote = service.quote(resolved, market)
     benchmark = service.benchmark_quote(market)
-    return {"market": market, "quote": quote, "benchmark": benchmark}
+    chart = service.quote_history(resolved, market, period="1y", interval="1d")
+    news = service.stock_news(resolved, market, limit=8)
+    ai_recommendation = advisor.quote_signal(
+        uid=uid,
+        market=market,
+        symbol=resolved,
+        payload={
+            "quote": quote,
+            "forecast": service.forecast_lite(resolved, market),
+            "risk": service.risk_lite(resolved, market),
+            "market_mood": service.market_mood(market),
+            "news": news,
+            "close_prices": chart.get("close") or [],
+        },
+    )
+    return {"market": market, "quote": quote, "benchmark": benchmark, "ai_recommendation": ai_recommendation}

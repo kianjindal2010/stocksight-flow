@@ -11,13 +11,41 @@ def _now_day() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
+def _f(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 class LearningEngine:
     def __init__(self, repo: FirestoreRepository, market_data: MarketDataService) -> None:
         self.repo = repo
         self.market_data = market_data
 
-    def dashboard(self, uid: str, market: str) -> dict[str, Any]:
+    def _refresh_portfolio_prices(self, uid: str, market: str) -> dict[str, Any]:
         portfolio = self.repo.get_portfolio(uid, market)
+        positions = portfolio.get("positions", [])
+        if not positions:
+            return portfolio
+        latest_prices: dict[str, float] = {}
+        for pos in positions:
+            symbol = str(pos.get("symbol") or "").upper().strip()
+            if not symbol:
+                continue
+            try:
+                quote = self.market_data.quote(symbol, market)
+            except Exception:
+                continue
+            last_price = _f(quote.get("price"), 0.0)
+            if last_price > 0:
+                latest_prices[symbol] = last_price
+        if not latest_prices:
+            return portfolio
+        return self.repo.refresh_position_prices(uid, market, latest_prices)
+
+    def dashboard(self, uid: str, market: str) -> dict[str, Any]:
+        portfolio = self._refresh_portfolio_prices(uid, market)
         perf = self.repo.get_portfolio_performance(uid, market)
         progress = self.repo.get_learning_doc(uid, "progress", default={"completed_modules": 0, "total_modules": 20})
         completed = int(progress.get("completed_modules", 0))
@@ -129,4 +157,3 @@ class LearningEngine:
         if not mistakes:
             mistakes.append("No major behavioral red flags detected.")
         return {"mistakes": mistakes}
-

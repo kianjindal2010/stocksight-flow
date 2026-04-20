@@ -95,6 +95,40 @@ def test_watchlist_crud(client, auth_headers):
     assert deletion.status_code == 200
 
 
+def test_dashboard_refreshes_position_prices_from_quote_feed(client, auth_headers):
+    buy = client.post(
+        "/api/trades/buy",
+        headers=auth_headers,
+        json={
+            "symbol": "AAPL",
+            "quantity": 2,
+            "order_type": "market",
+            "notes": "price sync check",
+            "checklist": {
+                "thesis": "sync test",
+                "risk_level": "medium",
+                "time_horizon": "2 weeks",
+                "buy_reason": "verify dashboard mark-to-market",
+                "trade_type": "speculative",
+            },
+        },
+    )
+    assert buy.status_code == 200
+
+    client.app.state.market_data.quote = lambda symbol, market: {  # type: ignore[assignment]
+        "symbol": "AAPL",
+        "name": "Apple Inc.",
+        "price": 150.0,
+        "change_pct": 2.5,
+        "currency": "USD",
+    }
+
+    response = client.get("/", headers=auth_headers)
+    assert response.status_code == 200
+    assert "$150.00" in response.text
+    assert "$10100.00" in response.text
+
+
 def test_protected_routes_require_auth(client):
     response = client.get("/api/portfolio")
     assert response.status_code == 401

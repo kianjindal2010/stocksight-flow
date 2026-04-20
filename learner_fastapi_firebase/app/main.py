@@ -325,6 +325,7 @@ def create_app() -> FastAPI:
         news: list[dict[str, Any]] = []
         quote_chart: dict[str, Any] = {"dates": [], "open": [], "high": [], "low": [], "close": [], "volume": []}
         quote_actions: dict[str, Any] = {"dividends": [], "splits": []}
+        quote_ai: dict[str, Any] | None = None
         if q:
             suggestions = app.state.market_data.search_symbols(q, market, limit=8)
         if symbol:
@@ -333,6 +334,19 @@ def create_app() -> FastAPI:
             news = app.state.market_data.stock_news(resolved, market, limit=8)
             quote_chart = app.state.market_data.quote_history(resolved, market, period="1y", interval="1d")
             quote_actions = app.state.market_data.quote_corporate_actions(resolved, market, limit=8)
+            quote_ai = app.state.ai_advisor.quote_signal(
+                uid=uid,
+                market=market,
+                symbol=resolved,
+                payload={
+                    "quote": quote,
+                    "forecast": app.state.market_data.forecast_lite(resolved, market),
+                    "risk": app.state.market_data.risk_lite(resolved, market),
+                    "market_mood": app.state.market_data.market_mood(market),
+                    "news": news,
+                    "close_prices": quote_chart.get("close") or [],
+                },
+            )
             if not suggestions and q:
                 suggestions = app.state.market_data.search_symbols(q, market, limit=8)
         return templates.TemplateResponse(
@@ -346,6 +360,7 @@ def create_app() -> FastAPI:
                     "quote_news": news,
                     "quote_chart": quote_chart,
                     "quote_actions": quote_actions,
+                    "quote_ai": quote_ai,
                     "suggestions": suggestions,
                 },
             ),

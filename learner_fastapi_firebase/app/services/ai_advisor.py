@@ -22,6 +22,14 @@ def _f(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
+def _score_1_to_100(value: Any, default: int = 50) -> int:
+    return int(round(_clamp(_f(value, default), 1, 100)))
+
+
 def _valid_api_key(value: str) -> bool:
     token = (value or "").strip()
     if not token:
@@ -350,6 +358,232 @@ class AIAdvisorService:
             fallback=fallback,
             normalizer=self._normalize_forecast,
             max_tokens=900,
+        )
+
+    def _quote_signal_fallback(
+        self,
+        symbol: str,
+        market: str,
+        payload: dict[str, Any],
+        reason: str = "rule_based",
+    ) -> dict[str, Any]:
+        quote = payload.get("quote") or {}
+        forecast = payload.get("forecast") or {}
+        risk = payload.get("risk") or {}
+        market_mood = payload.get("market_mood") or {}
+        news = payload.get("news") or []
+        close_prices_raw = payload.get("close_prices") or []
+
+        change_pct = _f(quote.get("change_pct"))
+        forecast_direction = str(forecast.get("direction") or "Sideways").strip().title()
+        forecast_conf_raw = _f(forecast.get("confidence"), 0.55)
+        forecast_conf = int(round(forecast_conf_raw * 100)) if forecast_conf_raw <= 1 else int(round(forecast_conf_raw))
+        forecast_conf = _score_1_to_100(forecast_conf, default=55)
+        risk_score = _score_1_to_100(risk.get("risk_score"), default=50)
+        mood_score = _score_1_to_100(market_mood.get("score"), default=50)
+
+        close_prices: list[float] = []
+        if isinstance(close_prices_raw, list):
+            for value in close_prices_raw:
+                try:
+                    close_prices.append(float(value))
+                except (TypeError, ValueError):
+                    continue
+
+        momentum_pct = 0.0
+        if len(close_prices) >= 21 and close_prices[-21] != 0:
+            momentum_pct = ((close_prices[-1] - close_prices[-21]) / close_prices[-21]) * 100
+        elif len(close_prices) >= 6 and close_prices[-6] != 0:
+            momentum_pct = ((close_prices[-1] - close_prices[-6]) / close_prices[-6]) * 100
+        elif change_pct:
+            momentum_pct = change_pct * 2.0
+
+        positive_terms = {
+            "beat",
+            "beats",
+            "growth",
+            "surge",
+            "record",
+            "strong",
+            "upgrade",
+            "buyback",
+            "profit",
+            "bullish",
+            "outperform",
+            "expands",
+            "launch",
+            "approval",
+        }
+        negative_terms = {
+            "miss",
+            "misses",
+            "fall",
+            "drop",
+            "decline",
+            "weak",
+            "downgrade",
+            "lawsuit",
+            "probe",
+            "recall",
+            "layoff",
+            "warning",
+            "loss",
+            "bearish",
+        }
+        titles: list[str] = []
+        if isinstance(news, list):
+            for row in news[:8]:
+                if not isinstance(row, dict):
+                    continue
+                title = str(row.get("title") or "").strip()
+                if title:
+                    titles.append(title)
+        sentiment_hits = 0
+        for title in titles:
+            lowered = title.lower()
+            sentiment_hits += sum(1 for term in positive_terms if term in lowered)
+            sentiment_hits -= sum(1 for term in negative_terms if term in lowered)
+        news_component = _clamp(sentiment_hits * 3.0, -18.0, 18.0)
+        if sentiment_hits >= 2:
+            news_bias = "Positive"
+        elif sentiment_hits <= -2:
+            news_bias = "Negative"
+        else:
+            news_bias = "Neutral"
+
+        if forecast_direction == "Up":
+            forecast_component = _clamp((forecast_conf - 50) * 0.55 + 4.0, -20.0, 20.0)
+        elif forecast_direction == "Down":
+            forecast_component = _clamp(-((forecast_conf - 50) * 0.55 + 4.0), -20.0, 20.0)
+        else:
+            forecast_component = _clamp((forecast_conf - 50) * 0.08, -4.0, 4.0)
+
+        risk_component = _clamp((risk_score - 50) * 0.30, -15.0, 15.0)
+        mood_component = _clamp((mood_score - 50) * 0.20, -10.0, 10.0)
+        momentum_component = _clamp(momentum_pct * 0.55, -14.0, 14.0)
+        day_component = _clamp(change_pct * 0.70, -8.0, 8.0)
+
+        buy_score = int(
+            round(
+                _clamp(
+                    50.0
+                    + forecast_component
+                    + risk_component
+                    + mood_component
+                    + momentum_component
+                    + day_component
+                    + news_component,
+                    1.0,
+                    100.0,
+                )
+            )
+        )
+        if buy_score >= 67:
+            action = "Buy"
+        elif buy_score <= 38:
+            action = "Sell"
+        else:
+            action = "Hold"
+
+        confidence = int(round(_clamp(45 + abs(buy_score - 50) * 1.1 + min(len(titles), 6) * 2.5, 35, 97)))
+        factors = [
+            f"Trend signal: {forecast_direction} ({forecast_conf}/100 confidence).",
+            f"Risk score: {risk_score}/100 and market mood: {mood_score}/100.",
+            f"Headline tone: {news_bias.lower()} from recent news flow.",
+            f"Price momentum: {momentum_pct:+.2f}% over recent sessions.",
+        ]
+        summary = (
+            f"{action} bias for {symbol}. Buy score is {buy_score}/100 from trend, risk, market tone, "
+            "and headline sentiment."
+        )
+        return {
+            "action": action,
+            "buy_score": buy_score,
+            "confidence": confidence,
+            "news_bias": news_bias,
+            "summary": summary,
+            "factors": factors,
+            "disclaimer": "Educational signal for paper trading only, not financial advice.",
+            "source": reason,
+            "generated_at": _now_iso(),
+            "model": self.model if self._enabled else "rule-based",
+        }
+
+    def _normalize_quote_signal(self, raw: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
+        action = str(raw.get("action") or raw.get("rating") or fallback["action"]).strip().title()
+        if action not in {"Buy", "Hold", "Sell"}:
+            action = fallback["action"]
+
+        buy_score = _score_1_to_100(raw.get("buy_score") or raw.get("score"), default=int(fallback["buy_score"]))
+        confidence = _score_1_to_100(raw.get("confidence"), default=int(fallback["confidence"]))
+        news_bias = str(raw.get("news_bias") or fallback["news_bias"]).strip().title()
+        if news_bias not in {"Positive", "Neutral", "Negative"}:
+            news_bias = fallback["news_bias"]
+
+        factors = raw.get("factors")
+        if not isinstance(factors, list):
+            factors = fallback["factors"]
+        else:
+            factors = [str(item).strip() for item in factors if str(item).strip()][:5] or fallback["factors"]
+
+        summary = str(raw.get("summary") or fallback["summary"]).strip()
+        if not summary:
+            summary = fallback["summary"]
+
+        return {
+            "action": action,
+            "buy_score": buy_score,
+            "confidence": confidence,
+            "news_bias": news_bias,
+            "summary": summary,
+            "factors": factors,
+            "disclaimer": str(raw.get("disclaimer") or fallback["disclaimer"]).strip(),
+            "source": "nvidia_llm",
+            "generated_at": _now_iso(),
+            "model": self.model,
+        }
+
+    def quote_signal(self, uid: str, market: str, symbol: str, payload: dict[str, Any]) -> dict[str, Any]:
+        safe_news = []
+        for row in (payload.get("news") or [])[:8]:
+            if not isinstance(row, dict):
+                continue
+            safe_news.append(
+                {
+                    "title": str(row.get("title") or "")[:220],
+                    "source": str(row.get("source") or "")[:80],
+                    "published": str(row.get("published") or "")[:40],
+                }
+            )
+
+        prompt_payload = {
+            "symbol": symbol,
+            "market": market,
+            "quote": payload.get("quote") or {},
+            "forecast": payload.get("forecast") or {},
+            "risk": payload.get("risk") or {},
+            "market_mood": payload.get("market_mood") or {},
+            "close_prices": (payload.get("close_prices") or [])[-120:],
+            "news": safe_news,
+        }
+        fallback = self._quote_signal_fallback(symbol=symbol, market=market, payload=prompt_payload, reason="rule_based")
+        system = (
+            "You are a disciplined paper-trading coach. "
+            "Respond in strict JSON only with no markdown."
+        )
+        user = (
+            "Return JSON with keys: action (Buy|Hold|Sell), buy_score (1-100), confidence (1-100), "
+            "news_bias (Positive|Neutral|Negative), summary (one short sentence), "
+            "factors (array of 3-5 short bullets), disclaimer (one sentence).\n"
+            f"Snapshot:\n{json.dumps(prompt_payload, ensure_ascii=True)}"
+        )
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+        return self._llm_or_fallback(
+            cache_key=f"quote-signal:{uid}:{market}:{symbol}:{hash(json.dumps(prompt_payload, sort_keys=True, default=str))}",
+            messages=messages,
+            fallback=fallback,
+            normalizer=self._normalize_quote_signal,
+            max_tokens=800,
         )
 
     def _tool_tip_fallback(self, topic: str, payload: dict[str, Any], reason: str = "rule_based") -> dict[str, Any]:

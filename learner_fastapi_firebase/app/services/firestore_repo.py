@@ -384,6 +384,33 @@ class FirestoreRepository:
             self._save_state(uid, state)
         return out
 
+    def refresh_position_prices(self, uid: str, market: str, latest_prices: dict[str, float]) -> dict[str, Any]:
+        state = self._load_state(uid)
+        portfolio, changed = self._ensure_market_bucket(state, market)
+        positions = state["positions"][market]
+
+        updated = False
+        for symbol, row in positions.items():
+            key = str(symbol).upper().strip()
+            last_price = _f(latest_prices.get(key), 0.0)
+            if last_price <= 0:
+                continue
+            shares = max(0, _i(row.get("shares"), 0))
+            avg_price = _f(row.get("avg_price"), 0.0)
+            row["last_price"] = round(last_price, 4)
+            row["market_value"] = round(shares * last_price, 2)
+            row["unrealized_pnl"] = round((last_price - avg_price) * shares, 2)
+            row["updated_at"] = utc_now()
+            positions[symbol] = row
+            updated = True
+
+        if updated:
+            portfolio["updated_at"] = utc_now()
+            self._save_state(uid, state)
+        elif changed:
+            self._save_state(uid, state)
+        return self.get_portfolio(uid, market)
+
     def get_portfolio_performance(self, uid: str, market: str) -> dict[str, Any]:
         state = self._load_state(uid)
         portfolio = self.get_portfolio(uid, market)

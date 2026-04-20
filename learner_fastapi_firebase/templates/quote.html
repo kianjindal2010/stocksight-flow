@@ -44,6 +44,38 @@
         </div>
     </div>
 
+    {% if quote_ai %}
+    {% set action = (quote_ai.action or "Hold")|title %}
+    <div class="card ai-inline-card quote-ai-card mb-4">
+        <div class="card-body d-flex flex-column gap-3">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <h3 class="section-title h5 mb-1">AI Quote Verdict</h3>
+                    <p class="section-subtitle mb-0">{{ quote_ai.summary }}</p>
+                </div>
+                <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end">
+                    <span class="chip quote-ai-chip quote-ai-{{ action|lower }}">{{ action }}</span>
+                    <span class="quote-ai-score">{{ quote_ai.buy_score }}/100</span>
+                </div>
+            </div>
+
+            {% if quote_ai.factors %}
+            <ul class="coach-list quote-ai-factors mb-0">
+                {% for factor in quote_ai.factors %}
+                <li>{{ factor }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+
+            <div class="quote-ai-meta">
+                <span><strong>News Tone:</strong> {{ quote_ai.news_bias or "Neutral" }}</span>
+                <span><strong>Signal Confidence:</strong> {{ quote_ai.confidence or 50 }}/100</span>
+                <span class="text-muted">{{ quote_ai.disclaimer }}</span>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <div class="row g-4 quote-rich-layout">
         <div class="col-xxl-3 col-xl-4 d-grid gap-3">
             <div class="card card-metric quote-side-card">

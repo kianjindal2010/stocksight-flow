@@ -1257,6 +1257,57 @@ h1, h2, h3, h4 {
     font-size: 0.84rem;
 }
 
+.ss-body .quote-ai-card {
+    border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--edge));
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.07), rgba(14, 116, 144, 0.05));
+}
+
+.ss-body .quote-ai-chip {
+    font-weight: 700;
+    min-width: 86px;
+    justify-content: center;
+    letter-spacing: 0.02em;
+}
+
+.ss-body .quote-ai-buy {
+    background: rgba(22, 163, 74, 0.14);
+    color: #166534;
+}
+
+.ss-body .quote-ai-hold {
+    background: rgba(59, 130, 246, 0.16);
+    color: #1d4ed8;
+}
+
+.ss-body .quote-ai-sell {
+    background: rgba(220, 38, 38, 0.14);
+    color: #991b1b;
+}
+
+.ss-body .quote-ai-score {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-pill);
+    padding: 0.32rem 0.78rem;
+    border: 1px solid var(--edge);
+    background: color-mix(in srgb, var(--surface) 88%, #ffffff);
+    font-weight: 700;
+    color: var(--ink);
+}
+
+.ss-body .quote-ai-factors {
+    margin: 0;
+}
+
+.ss-body .quote-ai-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem 1rem;
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+}
+
 .ss-body .quote-plot {
     min-height: 320px;
 }
