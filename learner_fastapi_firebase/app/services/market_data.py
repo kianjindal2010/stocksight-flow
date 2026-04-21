@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import math
 import time
-from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from datetime import datetime, time as daytime, timedelta
 from email.utils import parsedate_to_datetime
 from urllib.parse import quote_plus
 from xml.etree import ElementTree as ET
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -19,11 +21,18 @@ SUPPORTED_MARKETS = {
     "UK": {"label": "United Kingdom", "index_symbol": "^FTSE", "benchmark": "FTSE 100", "currency": "GBP"},
 }
 
+MARKET_SESSION_WINDOWS = {
+    "US": {"tz": "America/New_York", "open": (9, 30), "close": (16, 0)},
+    "INDIA": {"tz": "Asia/Kolkata", "open": (9, 15), "close": (15, 30)},
+    "UK": {"tz": "Europe/London", "open": (8, 0), "close": (16, 30)},
+}
+
 
 class MarketDataService:
     def __init__(self, cache_seconds: int = 300) -> None:
         self.cache_seconds = cache_seconds
         self._cache: dict[str, tuple[float, object]] = {}
+        self._download_timeout_seconds = 5.0
 
     def _get_cache(self, key: str):
         row = self._cache.get(key)
@@ -38,6 +47,87 @@ class MarketDataService:
     def _set_cache(self, key: str, value: object) -> object:
         self._cache[key] = (time.time(), value)
         return value
+
+    def market_session(self, market: str, now_utc: datetime | None = None) -> dict:
+        key = str(market or "US").upper()
+        session = MARKET_SESSION_WINDOWS.get(key, MARKET_SESSION_WINDOWS["US"])
+        tz = ZoneInfo(session["tz"])
+        now_local = (now_utc.astimezone(tz) if now_utc else datetime.now(tz))
+        open_h, open_m = session["open"]
+        close_h, close_m = session["close"]
+        open_time = daytime(hour=open_h, minute=open_m)
+        close_time = daytime(hour=close_h, minute=close_m)
+        is_weekday = now_local.weekday() < 5
+        is_open = is_weekday and open_time <= now_local.time() < close_time
+
+        today_open = now_local.replace(hour=open_h, minute=open_m, second=0, microsecond=0)
+        if is_open:
+            next_session = f"Closes at {close_time.strftime('%H:%M')} {now_local.tzname() or ''}".strip()
+        else:
+            next_open = today_open
+            if not is_weekday or now_local.time() >= close_time:
+                days_ahead = 1
+                while (now_local + timedelta(days=days_ahead)).weekday() >= 5:
+                    days_ahead += 1
+                next_open = (now_local + timedelta(days=days_ahead)).replace(hour=open_h, minute=open_m, second=0, microsecond=0)
+            elif now_local.time() < open_time:
+                next_open = today_open
+            next_session = f"Opens {next_open.strftime('%a %H:%M')} {now_local.tzname() or ''}".strip()
+
+        return {
+            "market": key,
+            "status": "open" if is_open else "closed",
+            "label": "Open" if is_open else "Closed",
+            "timezone": session["tz"],
+            "local_time": now_local.isoformat(),
+            "next_session": next_session,
+        }
+
+    def _download_with_timeout(self, tickers, period: str, interval: str) -> pd.DataFrame:
+        def _run():
+            return yf.download(tickers, period=period, interval=interval, progress=False)
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(_run)
+            try:
+                result = future.result(timeout=self._download_timeout_seconds)
+                return result if isinstance(result, pd.DataFrame) else pd.DataFrame()
+            except TimeoutError:
+                return pd.DataFrame()
+            except Exception:
+                return pd.DataFrame()
+
+    def batch_last_prices(self, symbols: list[str], market: str) -> dict[str, float]:
+        rows = [self.normalize_symbol(symbol, market) for symbol in symbols if str(symbol).strip()]
+        unique_symbols = []
+        seen = set()
+        for symbol in rows:
+            if symbol not in seen:
+                seen.add(symbol)
+                unique_symbols.append(symbol)
+        if not unique_symbols:
+            return {}
+
+        hist = self._download_with_timeout(unique_symbols, period="5d", interval="1d")
+        if hist.empty:
+            return {}
+
+        prices: dict[str, float] = {}
+        close = hist["Close"] if isinstance(hist.columns, pd.MultiIndex) and "Close" in hist.columns.get_level_values(0) else hist.get("Close")
+        if close is None:
+            return {}
+
+        if isinstance(close, pd.Series):
+            series = pd.to_numeric(close, errors="coerce").dropna()
+            if not series.empty and len(unique_symbols) == 1:
+                prices[unique_symbols[0]] = float(series.iloc[-1])
+            return prices
+
+        for symbol in close.columns:
+            series = pd.to_numeric(close[symbol], errors="coerce").dropna()
+            if not series.empty:
+                prices[str(symbol)] = float(series.iloc[-1])
+        return prices
 
     def markets(self) -> list[dict]:
         return [{"key": key, **value} for key, value in SUPPORTED_MARKETS.items()]
@@ -128,10 +218,7 @@ class MarketDataService:
         cached = self._get_cache(cache_key)
         if cached is not None:
             return cached  # type: ignore[return-value]
-        try:
-            hist = yf.download(symbol, period=period, interval=interval, progress=False)
-        except Exception:
-            hist = pd.DataFrame()
+        hist = self._download_with_timeout(symbol, period=period, interval=interval)
         if hist is None or hist.empty:
             return self._set_cache(
                 cache_key,
@@ -313,7 +400,7 @@ class MarketDataService:
             if market == "US"
             else ["RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "ITC.NS", "LT.NS"]
         )
-        data = yf.download(universe, period="1mo", interval="1d", progress=False)
+        data = self._download_with_timeout(universe, period="1mo", interval="1d")
         if data is None or data.empty:
             return []
         close = data["Close"] if isinstance(data.columns, pd.MultiIndex) else pd.DataFrame({universe[0]: data["Close"]})
@@ -356,7 +443,7 @@ class MarketDataService:
         if cached is not None:
             return cached  # type: ignore[return-value]
         idx = SUPPORTED_MARKETS.get(market, SUPPORTED_MARKETS["US"])["index_symbol"]
-        hist = yf.download(idx, period="6mo", interval="1d", progress=False)
+        hist = self._download_with_timeout(idx, period="6mo", interval="1d")
         if hist is None or hist.empty:
             return {"score": 50.0, "classification": "Neutral", "explanation": "Insufficient data"}
         close = hist["Close"]
@@ -389,8 +476,8 @@ class MarketDataService:
         if cached is not None:
             return cached  # type: ignore[return-value]
         bench = SUPPORTED_MARKETS.get(market, SUPPORTED_MARKETS["US"])["index_symbol"]
-        s_hist = yf.download(symbol, period="1y", interval="1d", progress=False)
-        b_hist = yf.download(bench, period="1y", interval="1d", progress=False)
+        s_hist = self._download_with_timeout(symbol, period="1y", interval="1d")
+        b_hist = self._download_with_timeout(bench, period="1y", interval="1d")
         if s_hist is None or s_hist.empty or b_hist is None or b_hist.empty:
             return self._set_cache(cache_key, {
                 "risk_score": 50,
@@ -439,7 +526,7 @@ class MarketDataService:
         cached = self._get_cache(cache_key)
         if cached is not None:
             return cached  # type: ignore[return-value]
-        hist = yf.download(symbol, period="6mo", interval="1d", progress=False)
+        hist = self._download_with_timeout(symbol, period="6mo", interval="1d")
         if hist is None or hist.empty:
             return self._set_cache(cache_key, {
                 "direction": "Neutral",

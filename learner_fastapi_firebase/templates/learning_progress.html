@@ -1,0 +1,119 @@
+{% extends "layout.html" %}
+
+{% block title %} - Learning Progress{% endblock %}
+
+{% block main %}
+{% set health_score = health.score if health and health.score is not none else 0 %}
+{% set completed_modules = progress_doc.completed_modules if progress_doc and progress_doc.completed_modules is not none else 0 %}
+{% set total_modules = progress_doc.total_modules if progress_doc and progress_doc.total_modules is not none else 20 %}
+<div class="orders-wrap">
+    <div class="card orders-card mb-4">
+        <div class="trades-header">
+            <h2 class="section-title mb-1">Learning Progress</h2>
+            <p class="section-subtitle mb-0">Track your learning score and get a concrete plan to improve each week.</p>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="p-3 border rounded-3 h-100">
+                        <div class="small text-muted">Progress</div>
+                        <div class="h3 fw-bold mb-1">{{ dashboard.learning_progress_pct }}%</div>
+                        <div class="small text-muted">{{ completed_modules }} / {{ total_modules }} modules completed</div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="p-3 border rounded-3 h-100">
+                        <div class="small text-muted">Health Score</div>
+                        <div class="h3 fw-bold mb-1">{{ health_score }}/100</div>
+                        <div class="small text-muted">Overall discipline and portfolio quality</div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="p-3 border rounded-3 h-100">
+                        <div class="small text-muted">Quiz Progress</div>
+                        <div class="h3 fw-bold mb-1">{{ quizzes.completed or 0 }}</div>
+                        <div class="small text-muted">Quizzes completed, streak {{ quizzes.streak or 0 }} day(s)</div>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-3">
+                <div class="small text-muted mb-1">Next Step</div>
+                <div class="fw-semibold">{{ dashboard.next_step }}</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-6">
+            <div class="card orders-card h-100">
+                <div class="trades-header">
+                    <h2 class="section-title mb-1">How To Improve</h2>
+                    <p class="section-subtitle mb-0">Action plan based on your current activity.</p>
+                </div>
+                <div class="card-body">
+                    <ol class="mb-0">
+                        {% for item in learning_actions %}
+                        <li class="mb-2">{{ item }}</li>
+                        {% endfor %}
+                    </ol>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card orders-card h-100">
+                <div class="trades-header">
+                    <h2 class="section-title mb-1">Skill Breakdown</h2>
+                    <p class="section-subtitle mb-0">Higher scores mean stronger execution habits.</p>
+                </div>
+                <div class="card-body">
+                    {% for key, value in health.components.items() %}
+                    <div class="mb-2">
+                        <div class="d-flex justify-content-between small mb-1">
+                            <span>{{ key.replace("_", " ").title() }}</span>
+                            <span>{{ value }}</span>
+                        </div>
+                        <div class="progress" role="progressbar" aria-valuenow="{{ value }}" aria-valuemin="0" aria-valuemax="100">
+                            <div class="progress-bar" style="width: {{ value }}%"></div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4 mt-1">
+        <div class="col-lg-6">
+            <div class="card orders-card h-100">
+                <div class="trades-header">
+                    <h2 class="section-title mb-1">Behavior Flags</h2>
+                </div>
+                <div class="card-body">
+                    <ul class="mb-0">
+                        {% for item in mistakes.mistakes %}
+                        <li class="mb-2">{{ item }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card orders-card h-100">
+                <div class="trades-header">
+                    <h2 class="section-title mb-1">Weekly Coaching Summary</h2>
+                </div>
+                <div class="card-body">
+                    <p class="mb-2"><strong>What happened:</strong> {{ weekly_summary.what_happened }}</p>
+                    <p class="mb-2"><strong>Next concept:</strong> {{ weekly_summary.next_concept }}</p>
+                    <div class="small text-muted mb-1">Good Decisions</div>
+                    <ul>
+                        {% for row in weekly_summary.good_decisions %}
+                        <li>{{ row }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

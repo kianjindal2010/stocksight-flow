@@ -567,18 +567,55 @@ class FirestoreRepository:
         quantity: int,
         order_type: str = "limit",
         trigger_price: float | None = None,
+        trail_percent: float | None = None,
+        trail_amount: float | None = None,
         notes: str = "",
     ) -> dict[str, Any]:
         state = self._load_state(uid)
         order_id = uuid4().hex[:14]
+        normalized_type = str(order_type).lower().strip() or "limit"
+        normalized_side = str(side).lower().strip()
+        allowed_types = {"market", "limit", "stop_loss", "trailing_stop"}
+        if normalized_type not in allowed_types:
+            raise ValueError("Unsupported order type")
+        if normalized_side not in {"buy", "sell"}:
+            raise ValueError("Invalid side")
+
+        normalized_trigger = _f(trigger_price) if trigger_price is not None else None
+        normalized_trail_percent = _f(trail_percent) if trail_percent is not None else None
+        normalized_trail_amount = _f(trail_amount) if trail_amount is not None else None
+
+        if normalized_type in {"limit", "stop_loss"}:
+            if normalized_trigger is None or normalized_trigger <= 0:
+                raise ValueError("Trigger price is required for limit/stop-loss orders")
+            normalized_trail_percent = None
+            normalized_trail_amount = None
+        elif normalized_type == "trailing_stop":
+            normalized_trigger = None
+            if normalized_trail_percent is not None and normalized_trail_percent <= 0:
+                raise ValueError("Trailing percent must be greater than zero")
+            if normalized_trail_amount is not None and normalized_trail_amount <= 0:
+                raise ValueError("Trailing amount must be greater than zero")
+            if normalized_trail_percent is None and normalized_trail_amount is None:
+                raise ValueError("Provide trailing percent or trailing amount for trailing stop orders")
+            if normalized_trail_percent is not None and normalized_trail_amount is not None:
+                raise ValueError("Use either trailing percent or trailing amount, not both")
+        else:
+            normalized_trigger = None
+            normalized_trail_percent = None
+            normalized_trail_amount = None
+
         row = {
             "id": order_id,
             "market": market,
-            "side": str(side).lower().strip(),
+            "side": normalized_side,
             "symbol": str(symbol).upper().strip(),
             "quantity": max(1, _i(quantity, 1)),
-            "order_type": str(order_type).lower().strip() or "limit",
-            "trigger_price": _f(trigger_price) if trigger_price is not None else None,
+            "order_type": normalized_type,
+            "trigger_price": round(normalized_trigger, 4) if normalized_trigger is not None else None,
+            "trail_percent": round(normalized_trail_percent, 4) if normalized_trail_percent is not None else None,
+            "trail_amount": round(normalized_trail_amount, 4) if normalized_trail_amount is not None else None,
+            "trail_anchor_price": None,
             "status": "open",
             "notes": notes or "",
             "created_at": utc_now(),

@@ -20,7 +20,7 @@
                         <span class="sp500-value">{{ currency_symbol }}{{ "%.2f"|format(benchmark.price or 0) }}</span>
                         <span class="sp500-change {{ benchmark_class }}">{{ "%+.2f"|format(benchmark.change_pct or 0) }}%</span>
                     </div>
-                    <div class="dashboard-hero-note">Data refreshes automatically for your selected market.</div>
+                    <div class="dashboard-hero-note">Data refreshes automatically for your selected market. {{ market_session.next_session if market_session else "" }}</div>
                 </div>
                 <div class="sp500-pills">
                     <div class="sp500-pill">
@@ -29,7 +29,7 @@
                     </div>
                     <div class="sp500-pill">
                         <span class="sp500-pill-label">Market Status</span>
-                        <span class="sp500-pill-value">Open</span>
+                        <span class="sp500-pill-value">{{ market_session.label if market_session else "Closed" }}</span>
                     </div>
                     <div class="sp500-pill">
                         <span class="sp500-pill-label">Learning Progress</span>

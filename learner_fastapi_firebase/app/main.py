@@ -165,20 +165,60 @@ def create_app() -> FastAPI:
             return RedirectResponse(url="/login", status_code=303)
         return uid
 
-    def _should_fill_order(order: dict[str, Any], last_price: float) -> bool:
+    def _evaluate_order_trigger(order: dict[str, Any], last_price: float) -> tuple[bool, dict[str, Any]]:
         if str(order.get("status")) != "open":
-            return False
+            return False, {}
         order_type = str(order.get("order_type") or "limit").lower()
-        if order_type == "market":
-            return True
-        trigger = order.get("trigger_price")
-        if trigger is None:
-            return False
-        trigger_price = _f(trigger)
         side = str(order.get("side") or "buy").lower()
-        if side == "buy":
-            return last_price <= trigger_price
-        return last_price >= trigger_price
+        if order_type == "market":
+            return True, {}
+        trigger = order.get("trigger_price")
+        if order_type == "limit":
+            if trigger is None:
+                return False, {}
+            trigger_price = _f(trigger)
+            if trigger_price <= 0:
+                return False, {}
+            if side == "buy":
+                return last_price <= trigger_price, {}
+            return last_price >= trigger_price, {}
+        if order_type == "stop_loss":
+            if trigger is None:
+                return False, {}
+            trigger_price = _f(trigger)
+            if trigger_price <= 0:
+                return False, {}
+            if side == "buy":
+                return last_price >= trigger_price, {}
+            return last_price <= trigger_price, {}
+        if order_type == "trailing_stop":
+            trail_percent_raw = order.get("trail_percent")
+            trail_amount_raw = order.get("trail_amount")
+            trail_percent = _f(trail_percent_raw) if trail_percent_raw is not None else None
+            trail_amount = _f(trail_amount_raw) if trail_amount_raw is not None else None
+            previous_anchor = _f(order.get("trail_anchor_price"))
+            anchor = previous_anchor if previous_anchor > 0 else last_price
+            if side == "buy":
+                anchor = min(anchor, last_price)
+                if trail_percent is not None and trail_percent > 0:
+                    trigger_price = anchor * (1 + trail_percent / 100)
+                elif trail_amount is not None and trail_amount > 0:
+                    trigger_price = anchor + trail_amount
+                else:
+                    return False, {}
+                updates = {"trail_anchor_price": round(anchor, 4), "trigger_price": round(trigger_price, 4)}
+                return last_price >= trigger_price, updates
+            anchor = max(anchor, last_price)
+            if trail_percent is not None and trail_percent > 0:
+                trigger_price = anchor * (1 - trail_percent / 100)
+            elif trail_amount is not None and trail_amount > 0:
+                trigger_price = anchor - trail_amount
+            else:
+                return False, {}
+            trigger_price = max(0.01, trigger_price)
+            updates = {"trail_anchor_price": round(anchor, 4), "trigger_price": round(trigger_price, 4)}
+            return last_price <= trigger_price, updates
+        return False, {}
 
     def _process_open_orders(uid: str, market: str) -> int:
         filled = 0
@@ -191,7 +231,10 @@ def create_app() -> FastAPI:
                 last_price = _f(quote.get("price"))
                 if last_price <= 0:
                     continue
-                if not _should_fill_order(order, last_price):
+                should_fill, order_updates = _evaluate_order_trigger(order, last_price)
+                if order_updates:
+                    app.state.repo.update_order(uid, order["id"], order_updates)
+                if not should_fill:
                     continue
                 trade_result = app.state.repo.apply_trade(
                     uid=uid,
@@ -261,6 +304,7 @@ def create_app() -> FastAPI:
             app.state.repo.set_selected_market(uid, market)
         dashboard = app.state.learning_engine.dashboard(uid, market)
         benchmark = app.state.market_data.benchmark_quote(market)
+        market_session = app.state.market_data.market_session(market)
         news = app.state.market_data.market_news(market, limit=8)
         health = app.state.learning_engine.health_score(uid, market)
         weekly_summary = app.state.learning_engine.weekly_summary(uid, market)
@@ -307,6 +351,7 @@ def create_app() -> FastAPI:
                     "top_positions": top_positions,
                     "worst_positions": worst_positions,
                     "coach": coach,
+                    "market_session": market_session,
                     "currency_code": currency_code,
                     "currency_symbol": _currency_symbol(currency_code),
                 },
@@ -530,6 +575,8 @@ def create_app() -> FastAPI:
         side: str = Form("buy"),
         order_type: str = Form("limit"),
         trigger_price: float | None = Form(None),
+        trail_percent: float | None = Form(None),
+        trail_amount: float | None = Form(None),
         notes: str = Form(""),
     ):
         uid = _auth_or_redirect(request)
@@ -538,19 +585,24 @@ def create_app() -> FastAPI:
         try:
             market = app.state.repo.get_selected_market(uid)
             resolved = app.state.market_data.resolve_symbol(symbol, market)
-            if order_type == "market":
+            normalized_type = str(order_type or "limit").lower().strip()
+            if normalized_type == "market":
                 trigger_price = None
+                trail_percent = None
+                trail_amount = None
             app.state.repo.create_order(
                 uid=uid,
                 market=market,
                 side=side,
                 symbol=resolved,
                 quantity=quantity,
-                order_type=order_type,
+                order_type=normalized_type,
                 trigger_price=trigger_price,
+                trail_percent=trail_percent,
+                trail_amount=trail_amount,
                 notes=notes,
             )
-            return _redirect("/orders", message=f"Order placed for {resolved}.")
+            return _redirect("/orders", message=f"{normalized_type.replace('_', ' ').title()} order placed for {resolved}.")
         except Exception as exc:
             return _redirect("/orders", error=f"Order placement failed: {exc}")
 
@@ -737,6 +789,68 @@ def create_app() -> FastAPI:
             request,
             "weekly_summary.html",
             _context(request, {"summary": summary, "summary_tip": summary_tip}),
+        )
+
+    @app.get("/learning-progress", response_class=HTMLResponse)
+    async def learning_progress_page(request: Request):
+        uid = _auth_or_redirect(request)
+        if isinstance(uid, RedirectResponse):
+            return uid
+        market = app.state.repo.get_selected_market(uid)
+        dashboard = app.state.learning_engine.dashboard(uid, market)
+        health = app.state.learning_engine.health_score(uid, market)
+        weekly = app.state.learning_engine.weekly_summary(uid, market)
+        mistakes = app.state.learning_engine.mistake_detection(uid, market)
+        curriculum = app.state.learning_engine.curriculum()
+        progress_doc = app.state.repo.get_learning_doc(
+            uid,
+            "progress",
+            default={"completed_modules": 0, "total_modules": 20, "next_step": dashboard.get("next_step", "")},
+        )
+        quizzes = app.state.repo.get_learning_doc(uid, "quizzes", default={"completed": 0, "streak": 0})
+        streaks = app.state.repo.get_learning_doc(
+            uid,
+            "streaks",
+            default={"learning_streak_days": 0, "quiz_streak_days": 0, "challenge_streak_days": 0},
+        )
+        components = health.get("components") if isinstance(health.get("components"), dict) else {}
+        actions: list[str] = []
+        progress_pct = _f(dashboard.get("learning_progress_pct"), 0.0)
+        if progress_pct < 30:
+            actions.append("Complete at least one curriculum module this week and finish its concept check.")
+        if _f(components.get("discipline"), 0.0) < 70:
+            actions.append("Trade less frequently and write a one-line thesis before every paper trade.")
+        if _f(components.get("diversification"), 0.0) < 70:
+            actions.append("Reduce concentration risk by limiting single-position size and adding sector diversity.")
+        detected = [str(item).strip() for item in mistakes.get("mistakes", []) if str(item).strip()]
+        if detected and "no major behavioral red flags detected." not in detected[0].lower():
+            actions.append(f"Fix this first: {detected[0]}")
+        next_concept = str(weekly.get("next_concept") or "").strip()
+        if next_concept:
+            actions.append(f"Study next concept: {next_concept}.")
+        if not actions:
+            actions = [
+                "Keep a consistent daily review habit and document one lesson from each trade.",
+                "Maintain position sizing discipline and protect downside with stop-loss rules.",
+                "Use weekly summary insights to set one concrete goal for the next week.",
+            ]
+        return templates.TemplateResponse(
+            request,
+            "learning_progress.html",
+            _context(
+                request,
+                {
+                    "dashboard": dashboard,
+                    "health": health,
+                    "weekly_summary": weekly,
+                    "mistakes": mistakes,
+                    "curriculum": curriculum,
+                    "progress_doc": progress_doc,
+                    "quizzes": quizzes,
+                    "streaks": streaks,
+                    "learning_actions": actions[:6],
+                },
+            ),
         )
 
     @app.get("/leaderboard", response_class=HTMLResponse)

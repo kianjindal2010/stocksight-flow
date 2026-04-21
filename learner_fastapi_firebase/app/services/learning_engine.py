@@ -28,18 +28,32 @@ class LearningEngine:
         positions = portfolio.get("positions", [])
         if not positions:
             return portfolio
+        symbols = [str(pos.get("symbol") or "").upper().strip() for pos in positions]
+        symbols = [symbol for symbol in symbols if symbol]
         latest_prices: dict[str, float] = {}
-        for pos in positions:
-            symbol = str(pos.get("symbol") or "").upper().strip()
-            if not symbol:
-                continue
-            try:
-                quote = self.market_data.quote(symbol, market)
-            except Exception:
-                continue
-            last_price = _f(quote.get("price"), 0.0)
-            if last_price > 0:
-                latest_prices[symbol] = last_price
+        # For small portfolios, direct quotes stay accurate and simple.
+        if len(symbols) <= 5:
+            for symbol in symbols:
+                try:
+                    quote = self.market_data.quote(symbol, market)
+                except Exception:
+                    continue
+                last_price = _f(quote.get("price"), 0.0)
+                if last_price > 0:
+                    latest_prices[symbol] = last_price
+        else:
+            latest_prices = self.market_data.batch_last_prices(symbols, market)
+            if len(latest_prices) < len(symbols):
+                for symbol in symbols:
+                    if symbol in latest_prices:
+                        continue
+                    try:
+                        quote = self.market_data.quote(symbol, market)
+                    except Exception:
+                        continue
+                    last_price = _f(quote.get("price"), 0.0)
+                    if last_price > 0:
+                        latest_prices[symbol] = last_price
         if not latest_prices:
             return portfolio
         return self.repo.refresh_position_prices(uid, market, latest_prices)

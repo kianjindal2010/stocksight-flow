@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -68,10 +69,11 @@ class AIAdvisorService:
     ) -> None:
         self.model = model
         self.cache_seconds = max(30, int(cache_seconds))
+        self.timeout_seconds = max(2.0, float(timeout_seconds))
         self._cache: dict[str, tuple[float, dict[str, Any]]] = {}
         self._enabled = bool(_valid_api_key(api_key) and OpenAI is not None)
         self._client = (
-            OpenAI(base_url=base_url, api_key=api_key, timeout=timeout_seconds) if self._enabled else None
+            OpenAI(base_url=base_url, api_key=api_key, timeout=self.timeout_seconds) if self._enabled else None
         )
 
     def _get_cache(self, key: str) -> dict[str, Any] | None:
@@ -149,11 +151,15 @@ class AIAdvisorService:
         if not self._enabled:
             return self._set_cache(cache_key, fallback)
         try:
-            raw_text = self._stream_chat(messages, max_tokens=max_tokens)
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(self._stream_chat, messages, max_tokens)
+                raw_text = future.result(timeout=self.timeout_seconds + 0.75)
             parsed = self._extract_json(raw_text)
             if not parsed:
                 return self._set_cache(cache_key, fallback)
             return self._set_cache(cache_key, normalizer(parsed, fallback))
+        except TimeoutError:
+            return self._set_cache(cache_key, fallback)
         except Exception:
             return self._set_cache(cache_key, fallback)
 
