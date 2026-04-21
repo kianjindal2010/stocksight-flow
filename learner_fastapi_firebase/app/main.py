@@ -474,6 +474,9 @@ def create_app() -> FastAPI:
         request: Request,
         symbol: str = Form(...),
         quantity: int = Form(...),
+        stop_loss_price: float | None = Form(None),
+        trailing_stop_percent: float | None = Form(None),
+        trailing_stop_amount: float | None = Form(None),
         notes: str = Form(""),
     ):
         uid = _auth_or_redirect(request)
@@ -494,7 +497,7 @@ def create_app() -> FastAPI:
                     "stop_loss_awareness": True,
                 },
             )
-            app.state.repo.apply_trade(
+            trade_result = app.state.repo.apply_trade(
                 uid=uid,
                 market=market,
                 side="buy",
@@ -504,6 +507,33 @@ def create_app() -> FastAPI:
                 order_type="market",
                 notes=notes,
             )
+            if stop_loss_price is not None and _f(stop_loss_price) > 0:
+                app.state.repo.create_order(
+                    uid=uid,
+                    market=market,
+                    side="sell",
+                    symbol=resolved,
+                    quantity=quantity,
+                    order_type="stop_loss",
+                    trigger_price=_f(stop_loss_price),
+                    notes=f"Auto stop-loss for trade {trade_result['trade']['id']}",
+                )
+            has_trailing_percent = trailing_stop_percent is not None and _f(trailing_stop_percent) > 0
+            has_trailing_amount = trailing_stop_amount is not None and _f(trailing_stop_amount) > 0
+            if has_trailing_percent and has_trailing_amount:
+                raise ValueError("Use either trailing stop percent or trailing stop amount, not both")
+            if has_trailing_percent or has_trailing_amount:
+                app.state.repo.create_order(
+                    uid=uid,
+                    market=market,
+                    side="sell",
+                    symbol=resolved,
+                    quantity=quantity,
+                    order_type="trailing_stop",
+                    trail_percent=_f(trailing_stop_percent) if has_trailing_percent else None,
+                    trail_amount=_f(trailing_stop_amount) if has_trailing_amount else None,
+                    notes=f"Auto trailing stop for trade {trade_result['trade']['id']}",
+                )
             return _redirect("/buy", message=f"Buy order executed: {quantity} x {resolved}")
         except Exception as exc:
             return _redirect("/buy", error=f"Buy failed: {exc}")

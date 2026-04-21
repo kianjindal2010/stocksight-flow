@@ -74,6 +74,58 @@ def test_trade_flow_with_checklist(client, auth_headers):
     assert payload["portfolio"]["positions"]
 
 
+def test_trade_buy_can_create_stop_loss_and_trailing_stop_orders(client, auth_headers):
+    response = client.post(
+        "/api/trades/buy",
+        headers=auth_headers,
+        json={
+            "symbol": "AAPL",
+            "quantity": 2,
+            "order_type": "market",
+            "notes": "starter trade",
+            "stop_loss_price": 95.0,
+            "trailing_stop_percent": 2.0,
+            "checklist": {
+                "thesis": "trend continuation",
+                "risk_level": "medium",
+                "time_horizon": "2 weeks",
+                "buy_reason": "risk control",
+                "trade_type": "speculative",
+            },
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload.get("protective_orders", [])) == 2
+    order_types = {row["order_type"] for row in payload["protective_orders"]}
+    assert order_types == {"stop_loss", "trailing_stop"}
+
+    orders = client.app.state.repo.list_orders("test-user", market="US")
+    assert len(orders) == 2
+
+
+def test_trade_buy_rejects_both_trailing_percent_and_amount(client, auth_headers):
+    response = client.post(
+        "/api/trades/buy",
+        headers=auth_headers,
+        json={
+            "symbol": "AAPL",
+            "quantity": 1,
+            "order_type": "market",
+            "trailing_stop_percent": 2.0,
+            "trailing_stop_amount": 1.0,
+            "checklist": {
+                "thesis": "validation check",
+                "risk_level": "medium",
+                "time_horizon": "2 weeks",
+                "buy_reason": "validation",
+                "trade_type": "speculative",
+            },
+        },
+    )
+    assert response.status_code == 422
+
+
 def test_watchlist_crud(client, auth_headers):
     create = client.post("/api/watchlists", headers=auth_headers, json={"name": "Tech", "symbols": ["AAPL"]})
     assert create.status_code == 200

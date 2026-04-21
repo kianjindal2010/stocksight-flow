@@ -38,7 +38,7 @@ def buy_trade(payload: TradeRequest, request: Request, uid: str = Depends(curren
     symbol = market_data.resolve_symbol(payload.symbol, market)
     quote = market_data.quote(symbol, market)
     learning_engine.save_checklist(uid, payload.checklist or {})
-    return repo.apply_trade(
+    result = repo.apply_trade(
         uid=uid,
         market=market,
         side="buy",
@@ -48,6 +48,37 @@ def buy_trade(payload: TradeRequest, request: Request, uid: str = Depends(curren
         order_type=payload.order_type,
         notes=payload.notes,
     )
+    protective_orders: list[dict] = []
+    if payload.stop_loss_price is not None:
+        protective_orders.append(
+            repo.create_order(
+                uid=uid,
+                market=market,
+                side="sell",
+                symbol=symbol,
+                quantity=payload.quantity,
+                order_type="stop_loss",
+                trigger_price=payload.stop_loss_price,
+                notes=f"Auto stop-loss for trade {result['trade']['id']}",
+            )
+        )
+    if payload.trailing_stop_percent is not None or payload.trailing_stop_amount is not None:
+        protective_orders.append(
+            repo.create_order(
+                uid=uid,
+                market=market,
+                side="sell",
+                symbol=symbol,
+                quantity=payload.quantity,
+                order_type="trailing_stop",
+                trail_percent=payload.trailing_stop_percent,
+                trail_amount=payload.trailing_stop_amount,
+                notes=f"Auto trailing stop for trade {result['trade']['id']}",
+            )
+        )
+    if protective_orders:
+        result["protective_orders"] = protective_orders
+    return result
 
 
 @router.post("/api/trades/sell")
