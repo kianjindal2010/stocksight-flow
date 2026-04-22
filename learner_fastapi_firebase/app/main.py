@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 from urllib.parse import urlencode
 
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -20,6 +23,8 @@ from .services.ai_advisor import AIAdvisorService
 from .services.chat_context import build_ai_chat_context
 from .services.learning_engine import LearningEngine
 from .services.market_data import MarketDataService
+
+logger = logging.getLogger(__name__)
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -84,6 +89,8 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def firebase_session_middleware(request: Request, call_next):
+        started = perf_counter()
+        status_code = 500
         request.state.current_user = None
         token = _extract_token(request)
         if token:
@@ -101,7 +108,17 @@ def create_app() -> FastAPI:
                     app.state.repo.ensure_user(uid, email=email, display_name=display_name)
             except Exception:
                 request.state.current_user = None
-        return await call_next(request)
+        response = await call_next(request)
+        status_code = int(getattr(response, "status_code", 500))
+        elapsed_ms = (perf_counter() - started) * 1000
+        logger.info(
+            "request_timing method=%s path=%s status=%s duration_ms=%.2f",
+            request.method,
+            request.url.path,
+            status_code,
+            elapsed_ms,
+        )
+        return response
 
     app.include_router(build_api_router())
 
@@ -164,6 +181,58 @@ def create_app() -> FastAPI:
         if not uid:
             return RedirectResponse(url="/login", status_code=303)
         return uid
+
+    def _run_parallel(
+        tasks: dict[str, Any],
+        max_workers: int = 8,
+    ) -> dict[str, Any]:
+        if not tasks:
+            return {}
+        workers = max(1, min(max_workers, len(tasks)))
+        results: dict[str, Any] = {}
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {name: pool.submit(fn) for name, fn in tasks.items()}
+            for name, fut in futures.items():
+                try:
+                    results[name] = fut.result()
+                except Exception as exc:
+                    logger.exception("parallel_task_failed task=%s error=%s", name, exc)
+        return results
+
+    def _coach_loading_placeholder() -> dict[str, Any]:
+        return {
+            "headline": "AI Coach",
+            "summary": "Loading personalized coaching insight...",
+            "risk_level": "Medium",
+            "actions": [
+                "Loading your next steps...",
+                "Loading your risk guidance...",
+                "Loading your headline watchlist...",
+            ],
+            "news_watch": ["Loading market context..."],
+            "disclaimer": "For education and paper trading only, not financial advice.",
+            "source": "loading",
+            "generated_at": _utc_now_iso(),
+            "model": "loading",
+        }
+
+    def _quote_ai_loading_placeholder() -> dict[str, Any]:
+        return {
+            "action": "Hold",
+            "buy_score": 50,
+            "confidence": 50,
+            "news_bias": "Neutral",
+            "summary": "Loading AI quote verdict...",
+            "factors": [
+                "Loading trend signal...",
+                "Loading risk profile...",
+                "Loading news sentiment...",
+            ],
+            "disclaimer": "Educational signal for paper trading only, not financial advice.",
+            "source": "loading",
+            "generated_at": _utc_now_iso(),
+            "model": "loading",
+        }
 
     def _evaluate_order_trigger(order: dict[str, Any], last_price: float) -> tuple[bool, dict[str, Any]]:
         if str(order.get("status")) != "open":
@@ -302,14 +371,27 @@ def create_app() -> FastAPI:
         if market not in {"US", "INDIA"}:
             market = "US"
             app.state.repo.set_selected_market(uid, market)
-        dashboard = app.state.learning_engine.dashboard(uid, market)
-        benchmark = app.state.market_data.benchmark_quote(market)
-        market_session = app.state.market_data.market_session(market)
-        news = app.state.market_data.market_news(market, limit=8)
-        health = app.state.learning_engine.health_score(uid, market)
-        weekly_summary = app.state.learning_engine.weekly_summary(uid, market)
-        mistakes = app.state.learning_engine.mistake_detection(uid, market)
-        mood = app.state.market_data.market_mood(market)
+        parallel_rows = _run_parallel(
+            {
+                "dashboard": lambda: app.state.learning_engine.dashboard(uid, market),
+                "benchmark": lambda: app.state.market_data.benchmark_quote(market),
+                "market_session": lambda: app.state.market_data.market_session(market),
+                "news": lambda: app.state.market_data.market_news(market, limit=8),
+                "health": lambda: app.state.learning_engine.health_score(uid, market),
+                "weekly_summary": lambda: app.state.learning_engine.weekly_summary(uid, market),
+                "mistakes": lambda: app.state.learning_engine.mistake_detection(uid, market),
+                "mood": lambda: app.state.market_data.market_mood(market),
+            },
+            max_workers=8,
+        )
+        dashboard = parallel_rows.get("dashboard") or app.state.learning_engine.dashboard(uid, market)
+        benchmark = parallel_rows.get("benchmark") or app.state.market_data.benchmark_quote(market)
+        market_session = parallel_rows.get("market_session") or app.state.market_data.market_session(market)
+        news = parallel_rows.get("news") or []
+        health = parallel_rows.get("health") or app.state.learning_engine.health_score(uid, market)
+        weekly_summary = parallel_rows.get("weekly_summary") or app.state.learning_engine.weekly_summary(uid, market)
+        mistakes = parallel_rows.get("mistakes") or app.state.learning_engine.mistake_detection(uid, market)
+        mood = parallel_rows.get("mood") or app.state.market_data.market_mood(market)
         portfolio = app.state.repo.get_portfolio(uid, market)
         positions = portfolio.get("positions", [])
         for pos in positions:
@@ -321,22 +403,7 @@ def create_app() -> FastAPI:
         top_positions = sorted(positions, key=lambda row: _f(row.get("change_pct")), reverse=True)[:4]
         worst_positions = sorted(positions, key=lambda row: _f(row.get("change_pct")))[:4]
         currency_code = str(benchmark.get("currency") or "USD")
-        coach = app.state.ai_advisor.dashboard_brief(
-            uid=uid,
-            market=market,
-            payload={
-                "dashboard": dashboard,
-                "portfolio": portfolio,
-                "health": health,
-                "mistakes": mistakes,
-                "weekly_summary": weekly_summary,
-                "market_mood": mood,
-                "news": news,
-                "positions": positions,
-                "top_positions": top_positions,
-                "worst_positions": worst_positions,
-            },
-        )
+        coach = _coach_loading_placeholder()
         return templates.TemplateResponse(
             request,
             "index.html",
@@ -351,6 +418,7 @@ def create_app() -> FastAPI:
                     "top_positions": top_positions,
                     "worst_positions": worst_positions,
                     "coach": coach,
+                    "coach_loading": True,
                     "market_session": market_session,
                     "currency_code": currency_code,
                     "currency_symbol": _currency_symbol(currency_code),
@@ -376,23 +444,23 @@ def create_app() -> FastAPI:
             suggestions = app.state.market_data.search_symbols(q, market, limit=8)
         if symbol:
             resolved = app.state.market_data.resolve_symbol(symbol, market)
-            quote = app.state.market_data.quote(resolved, market)
-            news = app.state.market_data.stock_news(resolved, market, limit=8)
-            quote_chart = app.state.market_data.quote_history(resolved, market, period="1y", interval="1d")
-            quote_actions = app.state.market_data.quote_corporate_actions(resolved, market, limit=8)
-            quote_ai = app.state.ai_advisor.quote_signal(
-                uid=uid,
-                market=market,
-                symbol=resolved,
-                payload={
-                    "quote": quote,
-                    "forecast": app.state.market_data.forecast_lite(resolved, market),
-                    "risk": app.state.market_data.risk_lite(resolved, market),
-                    "market_mood": app.state.market_data.market_mood(market),
-                    "news": news,
-                    "close_prices": quote_chart.get("close") or [],
+            parallel_rows = _run_parallel(
+                {
+                    "quote": lambda: app.state.market_data.quote(resolved, market),
+                    "news": lambda: app.state.market_data.stock_news(resolved, market, limit=8),
+                    "quote_chart": lambda: app.state.market_data.quote_history(resolved, market, period="1y", interval="1d"),
+                    "quote_actions": lambda: app.state.market_data.quote_corporate_actions(resolved, market, limit=8),
+                    "forecast": lambda: app.state.market_data.forecast_lite(resolved, market),
+                    "risk": lambda: app.state.market_data.risk_lite(resolved, market),
+                    "market_mood": lambda: app.state.market_data.market_mood(market),
                 },
+                max_workers=7,
             )
+            quote = parallel_rows.get("quote") or app.state.market_data.quote(resolved, market)
+            news = parallel_rows.get("news") or []
+            quote_chart = parallel_rows.get("quote_chart") or quote_chart
+            quote_actions = parallel_rows.get("quote_actions") or quote_actions
+            quote_ai = _quote_ai_loading_placeholder()
             if not suggestions and q:
                 suggestions = app.state.market_data.search_symbols(q, market, limit=8)
         return templates.TemplateResponse(
@@ -407,10 +475,146 @@ def create_app() -> FastAPI:
                     "quote_chart": quote_chart,
                     "quote_actions": quote_actions,
                     "quote_ai": quote_ai,
+                    "quote_ai_loading": bool(symbol),
                     "suggestions": suggestions,
                 },
             ),
         )
+
+    @app.get("/api/ai/dashboard-brief")
+    async def api_ai_dashboard_brief(request: Request):
+        uid = _uid(request)
+        if not uid:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        market = app.state.repo.get_selected_market(uid)
+        parallel_rows = _run_parallel(
+            {
+                "dashboard": lambda: app.state.learning_engine.dashboard(uid, market),
+                "news": lambda: app.state.market_data.market_news(market, limit=8),
+                "health": lambda: app.state.learning_engine.health_score(uid, market),
+                "weekly_summary": lambda: app.state.learning_engine.weekly_summary(uid, market),
+                "mistakes": lambda: app.state.learning_engine.mistake_detection(uid, market),
+                "mood": lambda: app.state.market_data.market_mood(market),
+            },
+            max_workers=6,
+        )
+        dashboard = parallel_rows.get("dashboard") or app.state.learning_engine.dashboard(uid, market)
+        news = parallel_rows.get("news") or []
+        health = parallel_rows.get("health") or app.state.learning_engine.health_score(uid, market)
+        weekly_summary = parallel_rows.get("weekly_summary") or app.state.learning_engine.weekly_summary(uid, market)
+        mistakes = parallel_rows.get("mistakes") or app.state.learning_engine.mistake_detection(uid, market)
+        mood = parallel_rows.get("mood") or app.state.market_data.market_mood(market)
+        portfolio = app.state.repo.get_portfolio(uid, market)
+        positions = portfolio.get("positions", [])
+        for pos in positions:
+            avg = _f(pos.get("avg_price"))
+            last = _f(pos.get("last_price"))
+            pos["change_pct"] = round(((last - avg) / avg * 100), 2) if avg else 0.0
+            pos["market_value"] = round(_f(pos.get("market_value")), 2)
+            pos["unrealized_pnl"] = round(_f(pos.get("unrealized_pnl")), 2)
+        top_positions = sorted(positions, key=lambda row: _f(row.get("change_pct")), reverse=True)[:4]
+        worst_positions = sorted(positions, key=lambda row: _f(row.get("change_pct")))[:4]
+        return app.state.ai_advisor.dashboard_brief(
+            uid=uid,
+            market=market,
+            payload={
+                "dashboard": dashboard,
+                "portfolio": portfolio,
+                "health": health,
+                "mistakes": mistakes,
+                "weekly_summary": weekly_summary,
+                "market_mood": mood,
+                "news": news,
+                "positions": positions,
+                "top_positions": top_positions,
+                "worst_positions": worst_positions,
+            },
+        )
+
+    @app.get("/api/ai/quote-signal")
+    async def api_ai_quote_signal(request: Request):
+        uid = _uid(request)
+        if not uid:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        raw_symbol = str(request.query_params.get("symbol") or "").strip()
+        if not raw_symbol:
+            raise HTTPException(status_code=400, detail="symbol is required")
+        market = app.state.repo.get_selected_market(uid)
+        symbol = app.state.market_data.resolve_symbol(raw_symbol, market)
+        parallel_rows = _run_parallel(
+            {
+                "quote": lambda: app.state.market_data.quote(symbol, market),
+                "forecast": lambda: app.state.market_data.forecast_lite(symbol, market),
+                "risk": lambda: app.state.market_data.risk_lite(symbol, market),
+                "market_mood": lambda: app.state.market_data.market_mood(market),
+                "news": lambda: app.state.market_data.stock_news(symbol, market, limit=8),
+                "quote_chart": lambda: app.state.market_data.quote_history(symbol, market, period="1y", interval="1d"),
+            },
+            max_workers=6,
+        )
+        quote = parallel_rows.get("quote") or app.state.market_data.quote(symbol, market)
+        forecast = parallel_rows.get("forecast") or app.state.market_data.forecast_lite(symbol, market)
+        risk = parallel_rows.get("risk") or app.state.market_data.risk_lite(symbol, market)
+        market_mood = parallel_rows.get("market_mood") or app.state.market_data.market_mood(market)
+        news = parallel_rows.get("news") or []
+        quote_chart = parallel_rows.get("quote_chart") or {"close": []}
+        return app.state.ai_advisor.quote_signal(
+            uid=uid,
+            market=market,
+            symbol=symbol,
+            payload={
+                "quote": quote,
+                "forecast": forecast,
+                "risk": risk,
+                "market_mood": market_mood,
+                "news": news,
+                "close_prices": quote_chart.get("close") or [],
+            },
+        )
+
+    @app.get("/api/dashboard/summary")
+    async def api_dashboard_summary(request: Request):
+        uid = _uid(request)
+        if not uid:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        market = app.state.repo.get_selected_market(uid)
+        parallel_rows = _run_parallel(
+            {
+                "dashboard": lambda: app.state.learning_engine.dashboard(uid, market),
+                "benchmark": lambda: app.state.market_data.benchmark_quote(market),
+                "market_session": lambda: app.state.market_data.market_session(market),
+                "news": lambda: app.state.market_data.market_news(market, limit=8),
+            },
+            max_workers=4,
+        )
+        dashboard = parallel_rows.get("dashboard") or app.state.learning_engine.dashboard(uid, market)
+        benchmark = parallel_rows.get("benchmark") or app.state.market_data.benchmark_quote(market)
+        market_session = parallel_rows.get("market_session") or app.state.market_data.market_session(market)
+        news = parallel_rows.get("news") or []
+        portfolio = app.state.repo.get_portfolio(uid, market)
+        positions = portfolio.get("positions", [])
+        for pos in positions:
+            avg = _f(pos.get("avg_price"))
+            last = _f(pos.get("last_price"))
+            pos["change_pct"] = round(((last - avg) / avg * 100), 2) if avg else 0.0
+            pos["market_value"] = round(_f(pos.get("market_value")), 2)
+            pos["unrealized_pnl"] = round(_f(pos.get("unrealized_pnl")), 2)
+        top_positions = sorted(positions, key=lambda row: _f(row.get("change_pct")), reverse=True)[:4]
+        worst_positions = sorted(positions, key=lambda row: _f(row.get("change_pct")))[:4]
+        currency_code = str(benchmark.get("currency") or "USD")
+        return {
+            "market": market,
+            "dashboard": dashboard,
+            "benchmark": benchmark,
+            "market_session": market_session,
+            "news": news,
+            "portfolio": portfolio,
+            "positions": positions,
+            "top_positions": top_positions,
+            "worst_positions": worst_positions,
+            "currency_code": currency_code,
+            "currency_symbol": _currency_symbol(currency_code),
+        }
 
     @app.get("/watchlist", response_class=HTMLResponse)
     async def watchlist_page(request: Request):

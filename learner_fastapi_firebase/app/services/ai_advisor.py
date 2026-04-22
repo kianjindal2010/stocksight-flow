@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from datetime import datetime, timezone
+from time import perf_counter
 from typing import Any, Callable
 
 try:
     from openai import OpenAI
 except Exception:  # pragma: no cover - optional dependency fallback
     OpenAI = None  # type: ignore[assignment]
+
+logger = logging.getLogger(__name__)
 
 
 def _now_iso() -> str:
@@ -149,19 +153,50 @@ class AIAdvisorService:
         if cached is not None:
             return cached
         if not self._enabled:
+            logger.info("ai_advisor.call source=rule_based reason=disabled cache_key=%s", cache_key[:80])
             return self._set_cache(cache_key, fallback)
+        started = perf_counter()
         try:
-            with ThreadPoolExecutor(max_workers=1) as pool:
-                future = pool.submit(self._stream_chat, messages, max_tokens)
-                raw_text = future.result(timeout=self.timeout_seconds + 0.75)
+            pool = ThreadPoolExecutor(max_workers=1)
+            future = pool.submit(self._stream_chat, messages, max_tokens)
+            raw_text = future.result(timeout=self.timeout_seconds + 0.75)
             parsed = self._extract_json(raw_text)
             if not parsed:
+                logger.info(
+                    "ai_advisor.call source=rule_based reason=parse_empty duration_ms=%.2f cache_key=%s",
+                    (perf_counter() - started) * 1000,
+                    cache_key[:80],
+                )
                 return self._set_cache(cache_key, fallback)
+            logger.info(
+                "ai_advisor.call source=nvidia_llm duration_ms=%.2f cache_key=%s",
+                (perf_counter() - started) * 1000,
+                cache_key[:80],
+            )
             return self._set_cache(cache_key, normalizer(parsed, fallback))
         except TimeoutError:
+            try:
+                future.cancel()
+            except Exception:
+                pass
+            logger.info(
+                "ai_advisor.call source=rule_based reason=timeout duration_ms=%.2f cache_key=%s",
+                (perf_counter() - started) * 1000,
+                cache_key[:80],
+            )
             return self._set_cache(cache_key, fallback)
         except Exception:
+            logger.info(
+                "ai_advisor.call source=rule_based reason=exception duration_ms=%.2f cache_key=%s",
+                (perf_counter() - started) * 1000,
+                cache_key[:80],
+            )
             return self._set_cache(cache_key, fallback)
+        finally:
+            try:
+                pool.shutdown(wait=False, cancel_futures=True)
+            except Exception:
+                pass
 
     def _dashboard_fallback(self, payload: dict[str, Any], reason: str = "rule_based") -> dict[str, Any]:
         market = str(payload.get("market") or "US")

@@ -17,10 +17,10 @@
                     <div class="sp500-label">{{ market_name|upper }}</div>
                     <div class="sp500-subtitle">{{ benchmark.label }} - Live paper-trading benchmark</div>
                     <div class="d-flex align-items-baseline flex-wrap gap-3 mt-2">
-                        <span class="sp500-value">{{ currency_symbol }}{{ "%.2f"|format(benchmark.price or 0) }}</span>
-                        <span class="sp500-change {{ benchmark_class }}">{{ "%+.2f"|format(benchmark.change_pct or 0) }}%</span>
+                        <span id="benchmarkValue" class="sp500-value">{{ currency_symbol }}{{ "%.2f"|format(benchmark.price or 0) }}</span>
+                        <span id="benchmarkChange" class="sp500-change {{ benchmark_class }}">{{ "%+.2f"|format(benchmark.change_pct or 0) }}%</span>
                     </div>
-                    <div class="dashboard-hero-note">Data refreshes automatically for your selected market. {{ market_session.next_session if market_session else "" }}</div>
+                    <div id="marketSessionNote" class="dashboard-hero-note">Data refreshes automatically for your selected market. {{ market_session.next_session if market_session else "" }}</div>
                 </div>
                 <div class="sp500-pills">
                     <div class="sp500-pill">
@@ -29,11 +29,11 @@
                     </div>
                     <div class="sp500-pill">
                         <span class="sp500-pill-label">Market Status</span>
-                        <span class="sp500-pill-value">{{ market_session.label if market_session else "Closed" }}</span>
+                        <span id="marketStatusValue" class="sp500-pill-value">{{ market_session.label if market_session else "Closed" }}</span>
                     </div>
                     <div class="sp500-pill">
                         <span class="sp500-pill-label">Learning Progress</span>
-                        <span class="sp500-pill-value">{{ dashboard.learning_progress_pct }}%</span>
+                        <span id="learningProgressValue" class="sp500-pill-value">{{ dashboard.learning_progress_pct }}%</span>
                     </div>
                 </div>
             </div>
@@ -43,7 +43,7 @@
             <div class="card summary-card summary-card--value h-100">
                 <div class="card-body">
                     <div class="summary-label">Portfolio Value</div>
-                    <div class="summary-value fw-bold h3 mb-1">{{ currency_symbol }}{{ "%.2f"|format(portfolio.total_value or 0) }}</div>
+                    <div id="portfolioValue" class="summary-value fw-bold h3 mb-1">{{ currency_symbol }}{{ "%.2f"|format(portfolio.total_value or 0) }}</div>
                     <div class="summary-subvalue">Total account value</div>
                 </div>
             </div>
@@ -52,7 +52,7 @@
             <div class="card summary-card summary-card--today h-100">
                 <div class="card-body">
                     <div class="summary-label">Return (Today)</div>
-                    <div class="summary-value fw-bold h3 mb-1 {{ today_class }}">{{ "%+.2f"|format(dashboard.changed_today_pct or 0) }}%</div>
+                    <div id="todayReturn" class="summary-value fw-bold h3 mb-1 {{ today_class }}">{{ "%+.2f"|format(dashboard.changed_today_pct or 0) }}%</div>
                     <div class="summary-subvalue">Daily paper-trading change</div>
                 </div>
             </div>
@@ -61,7 +61,7 @@
             <div class="card summary-card summary-card--total h-100">
                 <div class="card-body">
                     <div class="summary-label">Return (Total)</div>
-                    <div class="summary-value fw-bold h3 mb-1 {{ total_class }}">{{ "%+.2f"|format(dashboard.simple_return_pct or 0) }}%</div>
+                    <div id="totalReturn" class="summary-value fw-bold h3 mb-1 {{ total_class }}">{{ "%+.2f"|format(dashboard.simple_return_pct or 0) }}%</div>
                     <div class="summary-subvalue">Since first simulated investment</div>
                 </div>
             </div>
@@ -166,21 +166,21 @@
                     <span class="chip {{ risk_class }}">{{ coach.risk_level }} Risk</span>
                 </div>
                 <div class="card-body">
-                    <p class="fw-semibold mb-2">{{ coach.headline }}</p>
-                    <p class="text-muted-soft small mb-3">{{ coach.summary }}</p>
+                    <p id="aiCoachHeadline" class="fw-semibold mb-2">{{ coach.headline }}</p>
+                    <p id="aiCoachSummary" class="text-muted-soft small mb-3">{{ coach.summary }}</p>
                     <div class="summary-label mb-2">Suggested Next Steps</div>
-                    <ul class="coach-list">
+                    <ul id="aiCoachActions" class="coach-list">
                         {% for step in coach.actions %}
                         <li>{{ step }}</li>
                         {% endfor %}
                     </ul>
                     <div class="summary-label mt-3 mb-2">News To Watch</div>
-                    <ul class="coach-list">
+                    <ul id="aiCoachNewsWatch" class="coach-list">
                         {% for item in coach.news_watch %}
                         <li>{{ item }}</li>
                         {% endfor %}
                     </ul>
-                    <p class="small text-muted mt-2 mb-0">{{ coach.disclaimer }}</p>
+                    <p id="aiCoachDisclaimer" class="small text-muted mt-2 mb-0">{{ coach.disclaimer }}</p>
                 </div>
             </div>
 
@@ -188,7 +188,7 @@
                 <div class="card-metric-header metric-tone-news">
                     <div class="card-metric-header-title">Market Headlines</div>
                 </div>
-                <div class="list-group list-group-flush">
+                <div id="marketHeadlines" class="list-group list-group-flush">
                     {% for item in news %}
                     <a class="list-group-item list-group-item-action metric-list-item" href="{{ item.link }}" target="_blank" rel="noopener">
                         <div class="fw-semibold">{{ item.title }}</div>
@@ -203,4 +203,109 @@
         </div>
     </div>
 </div>
+<script>
+(function () {
+    function classForChange(value) {
+        return value >= 0 ? "performance-up" : "performance-down";
+    }
+
+    function fmtSignedPct(value) {
+        const num = Number(value || 0);
+        const fixed = num.toFixed(2);
+        return (num >= 0 ? "+" : "") + fixed + "%";
+    }
+
+    async function refreshDashboardSummary() {
+        try {
+            const res = await fetch("/api/dashboard/summary", { credentials: "include" });
+            if (!res.ok) return;
+            const data = await res.json();
+            const benchmark = data.benchmark || {};
+            const dashboard = data.dashboard || {};
+            const marketSession = data.market_session || {};
+            const news = Array.isArray(data.news) ? data.news : [];
+            const currency = data.currency_symbol || "$";
+            const portfolio = data.portfolio || {};
+
+            const benchmarkValue = document.getElementById("benchmarkValue");
+            const benchmarkChange = document.getElementById("benchmarkChange");
+            const marketSessionNote = document.getElementById("marketSessionNote");
+            const marketStatusValue = document.getElementById("marketStatusValue");
+            const learningProgressValue = document.getElementById("learningProgressValue");
+            const portfolioValue = document.getElementById("portfolioValue");
+            const todayReturn = document.getElementById("todayReturn");
+            const totalReturn = document.getElementById("totalReturn");
+            const marketHeadlines = document.getElementById("marketHeadlines");
+
+            if (benchmarkValue) benchmarkValue.textContent = currency + Number(benchmark.price || 0).toFixed(2);
+            if (benchmarkChange) {
+                const change = Number(benchmark.change_pct || 0);
+                benchmarkChange.textContent = fmtSignedPct(change);
+                benchmarkChange.classList.remove("performance-up", "performance-down");
+                benchmarkChange.classList.add(classForChange(change));
+            }
+            if (marketSessionNote) marketSessionNote.textContent = "Data refreshes automatically for your selected market. " + String(marketSession.next_session || "");
+            if (marketStatusValue) marketStatusValue.textContent = String(marketSession.label || "Closed");
+            if (learningProgressValue) learningProgressValue.textContent = String(Math.round(Number(dashboard.learning_progress_pct || 0))) + "%";
+            if (portfolioValue) portfolioValue.textContent = currency + Number(portfolio.total_value || 0).toFixed(2);
+            if (todayReturn) {
+                const change = Number(dashboard.changed_today_pct || 0);
+                todayReturn.textContent = fmtSignedPct(change);
+                todayReturn.classList.remove("performance-up", "performance-down");
+                todayReturn.classList.add(classForChange(change));
+            }
+            if (totalReturn) {
+                const change = Number(dashboard.simple_return_pct || 0);
+                totalReturn.textContent = fmtSignedPct(change);
+                totalReturn.classList.remove("performance-up", "performance-down");
+                totalReturn.classList.add(classForChange(change));
+            }
+            if (marketHeadlines) {
+                if (!news.length) {
+                    marketHeadlines.innerHTML = '<div class="list-group-item text-muted metric-list-item">No live headlines found right now.</div>';
+                } else {
+                    marketHeadlines.innerHTML = news.map((item) => (
+                        '<a class="list-group-item list-group-item-action metric-list-item" href="' + String(item.link || "#") + '" target="_blank" rel="noopener">' +
+                        '<div class="fw-semibold">' + String(item.title || "Headline") + '</div>' +
+                        '<div class="small text-muted">' + String(item.source || "News") + '</div>' +
+                        '</a>'
+                    )).join("");
+                }
+            }
+        } catch (err) {
+            console.debug("Dashboard summary refresh failed", err);
+        }
+    }
+
+    async function loadCoach() {
+        try {
+            const res = await fetch("/api/ai/dashboard-brief", { credentials: "include" });
+            if (!res.ok) return;
+            const coach = await res.json();
+            const headline = document.getElementById("aiCoachHeadline");
+            const summary = document.getElementById("aiCoachSummary");
+            const actions = document.getElementById("aiCoachActions");
+            const newsWatch = document.getElementById("aiCoachNewsWatch");
+            const disclaimer = document.getElementById("aiCoachDisclaimer");
+            if (headline) headline.textContent = String(coach.headline || "AI Coach");
+            if (summary) summary.textContent = String(coach.summary || "");
+            if (actions) {
+                const rows = Array.isArray(coach.actions) ? coach.actions : [];
+                actions.innerHTML = rows.map((row) => "<li>" + String(row) + "</li>").join("");
+            }
+            if (newsWatch) {
+                const rows = Array.isArray(coach.news_watch) ? coach.news_watch : [];
+                newsWatch.innerHTML = rows.map((row) => "<li>" + String(row) + "</li>").join("");
+            }
+            if (disclaimer) disclaimer.textContent = String(coach.disclaimer || "");
+        } catch (err) {
+            console.debug("AI coach load failed", err);
+        }
+    }
+
+    refreshDashboardSummary();
+    loadCoach();
+    window.setInterval(refreshDashboardSummary, 30000);
+})();
+</script>
 {% endblock %}

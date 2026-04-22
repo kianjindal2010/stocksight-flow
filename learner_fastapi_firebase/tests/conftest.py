@@ -61,6 +61,68 @@ def app(monkeypatch):
     monkeypatch.setattr(market_data, "market_mood", lambda market: {"score": 55.0, "classification": "Neutral"})
     monkeypatch.setattr(market_data, "risk_lite", lambda symbol, market: {"risk_score": 50})
     monkeypatch.setattr(market_data, "forecast_lite", lambda symbol, market: {"direction": "Up", "confidence": 0.6})
+
+    ai = app.state.ai_advisor
+    monkeypatch.setattr(
+        ai,
+        "dashboard_brief",
+        lambda uid, market, payload: {
+            "headline": "AI Coach",
+            "summary": "Test coach summary",
+            "risk_level": "Medium",
+            "actions": ["Step 1", "Step 2", "Step 3"],
+            "news_watch": ["Item 1", "Item 2"],
+            "disclaimer": "Test disclaimer",
+        },
+    )
+    monkeypatch.setattr(
+        ai,
+        "quote_signal",
+        lambda uid, market, symbol, payload: {
+            "action": "Hold",
+            "buy_score": 50,
+            "confidence": 50,
+            "news_bias": "Neutral",
+            "summary": "Test quote signal",
+            "factors": ["Factor 1", "Factor 2"],
+            "disclaimer": "Test disclaimer",
+        },
+    )
+    monkeypatch.setattr(
+        ai,
+        "tool_tip",
+        lambda uid, market, topic, payload: {
+            "title": "Tip",
+            "explain_like_15": "Test tip",
+            "steps": ["A", "B", "C"],
+            "context": "Test context",
+        },
+    )
+    monkeypatch.setattr(
+        ai,
+        "portfolio_explainer",
+        lambda uid, market, payload: {
+            "plain_english": "Test plain english",
+            "analogy": "Test analogy",
+            "why_it_moved": "Test move",
+            "next_steps": ["A", "B"],
+        },
+    )
+    monkeypatch.setattr(
+        ai,
+        "forecast_explainer",
+        lambda uid, market, symbol, payload: {
+            "quick_take": "Test",
+            "explain_like_15": "Test",
+            "portfolio_link": "Test",
+            "next_steps": ["A", "B"],
+        },
+    )
+    monkeypatch.setattr(
+        ai,
+        "chat_reply",
+        lambda uid, market, message, history=None, context=None: {"reply": "Test reply"},
+    )
     return app
 
 
@@ -72,4 +134,3 @@ def client(app):
 @pytest.fixture()
 def auth_headers():
     return {"Authorization": "Bearer test-token"}
-

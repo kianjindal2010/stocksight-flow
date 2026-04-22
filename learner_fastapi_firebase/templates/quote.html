@@ -51,26 +51,26 @@
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <div>
                     <h3 class="section-title h5 mb-1">AI Quote Verdict</h3>
-                    <p class="section-subtitle mb-0">{{ quote_ai.summary }}</p>
+                    <p id="quoteAiSummary" class="section-subtitle mb-0">{{ quote_ai.summary }}</p>
                 </div>
                 <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end">
-                    <span class="chip quote-ai-chip quote-ai-{{ action|lower }}">{{ action }}</span>
-                    <span class="quote-ai-score">{{ quote_ai.buy_score }}/100</span>
+                    <span id="quoteAiAction" class="chip quote-ai-chip quote-ai-{{ action|lower }}">{{ action }}</span>
+                    <span id="quoteAiScore" class="quote-ai-score">{{ quote_ai.buy_score }}/100</span>
                 </div>
             </div>
 
             {% if quote_ai.factors %}
-            <ul class="coach-list quote-ai-factors mb-0">
+            <ul id="quoteAiFactors" class="coach-list quote-ai-factors mb-0">
                 {% for factor in quote_ai.factors %}
                 <li>{{ factor }}</li>
                 {% endfor %}
             </ul>
             {% endif %}
 
-            <div class="quote-ai-meta">
-                <span><strong>News Tone:</strong> {{ quote_ai.news_bias or "Neutral" }}</span>
-                <span><strong>Signal Confidence:</strong> {{ quote_ai.confidence or 50 }}/100</span>
-                <span class="text-muted">{{ quote_ai.disclaimer }}</span>
+            <div id="quoteAiMeta" class="quote-ai-meta">
+                <span id="quoteAiNewsTone"><strong>News Tone:</strong> {{ quote_ai.news_bias or "Neutral" }}</span>
+                <span id="quoteAiConfidence"><strong>Signal Confidence:</strong> {{ quote_ai.confidence or 50 }}/100</span>
+                <span id="quoteAiDisclaimer" class="text-muted">{{ quote_ai.disclaimer }}</span>
             </div>
         </div>
     </div>
@@ -353,6 +353,55 @@
 
         drawCharts(activeRange);
         syncActiveButton(activeRange);
+    })();
+
+    (function () {
+        const currentSymbol = "{{ quote.symbol if quote else '' }}";
+        if (!currentSymbol) {
+            return;
+        }
+
+        function actionClass(action) {
+            const normalized = String(action || "hold").toLowerCase();
+            return "quote-ai-" + normalized;
+        }
+
+        function hydrateQuoteAi(data) {
+            const summary = document.getElementById("quoteAiSummary");
+            const action = document.getElementById("quoteAiAction");
+            const score = document.getElementById("quoteAiScore");
+            const factors = document.getElementById("quoteAiFactors");
+            const newsTone = document.getElementById("quoteAiNewsTone");
+            const confidence = document.getElementById("quoteAiConfidence");
+            const disclaimer = document.getElementById("quoteAiDisclaimer");
+            if (summary) summary.textContent = String(data.summary || "");
+            if (action) {
+                action.textContent = String(data.action || "Hold");
+                action.classList.remove("quote-ai-buy", "quote-ai-hold", "quote-ai-sell");
+                action.classList.add(actionClass(data.action));
+            }
+            if (score) score.textContent = String(data.buy_score || 50) + "/100";
+            if (factors) {
+                const rows = Array.isArray(data.factors) ? data.factors : [];
+                factors.innerHTML = rows.map((row) => "<li>" + String(row) + "</li>").join("");
+            }
+            if (newsTone) newsTone.innerHTML = "<strong>News Tone:</strong> " + String(data.news_bias || "Neutral");
+            if (confidence) confidence.innerHTML = "<strong>Signal Confidence:</strong> " + String(data.confidence || 50) + "/100";
+            if (disclaimer) disclaimer.textContent = String(data.disclaimer || "");
+        }
+
+        async function loadQuoteAi() {
+            try {
+                const res = await fetch("/api/ai/quote-signal?symbol=" + encodeURIComponent(currentSymbol), { credentials: "include" });
+                if (!res.ok) return;
+                const payload = await res.json();
+                hydrateQuoteAi(payload);
+            } catch (err) {
+                console.debug("Quote AI load failed", err);
+            }
+        }
+
+        loadQuoteAi();
     })();
     </script>
     {% endif %}
