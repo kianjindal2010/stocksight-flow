@@ -142,7 +142,9 @@ class FirestoreRepository:
         if self._memory():
             self._mem[uid] = state
             return
-        self._state_ref(uid).set(state, merge=True)
+        # Persist the full user document so removed nested keys (for example,
+        # sold-out symbols under positions.<market>) are actually deleted.
+        self._state_ref(uid).set(state)
         self._set_cached_state(uid, state)
 
     def ensure_user(self, uid: str, email: str = "", display_name: str = "") -> dict[str, Any]:
@@ -362,9 +364,43 @@ class FirestoreRepository:
             changed = True
         return state["portfolio"][market], changed
 
+    def _net_shares_for_symbol(self, state: dict[str, Any], market: str, symbol: str) -> int:
+        normalized_symbol = str(symbol or "").upper().strip()
+        if not normalized_symbol:
+            return 0
+        net = 0
+        for trade in state.get("trades", {}).values():
+            if str(trade.get("market", "")).upper() != str(market).upper():
+                continue
+            if str(trade.get("symbol", "")).upper().strip() != normalized_symbol:
+                continue
+            qty = max(0, _i(trade.get("quantity"), 0))
+            if str(trade.get("side", "")).lower().strip() == "buy":
+                net += qty
+            elif str(trade.get("side", "")).lower().strip() == "sell":
+                net -= qty
+        return net
+
+    def _repair_stale_positions(self, state: dict[str, Any], market: str) -> bool:
+        """
+        Firestore map merges can leave removed symbols behind in historical data.
+        Reconcile obvious stale positions where net shares from trade ledger <= 0.
+        """
+        positions = state.get("positions", {}).get(market, {})
+        if not isinstance(positions, dict):
+            return False
+        changed = False
+        for symbol in list(positions.keys()):
+            net_shares = self._net_shares_for_symbol(state, market, symbol)
+            if net_shares <= 0:
+                positions.pop(symbol, None)
+                changed = True
+        return changed
+
     def get_portfolio(self, uid: str, market: str) -> dict[str, Any]:
         state = self._load_state(uid)
         portfolio, changed = self._ensure_market_bucket(state, market)
+        changed = self._repair_stale_positions(state, market) or changed
         positions = list(state["positions"][market].values())
         market_value = sum(_f(pos.get("market_value"), 0.0) for pos in positions)
         total_value = _f(portfolio.get("cash"), 0.0) + market_value
@@ -381,6 +417,7 @@ class FirestoreRepository:
             "updated_at": portfolio.get("updated_at", utc_now()),
         }
         if changed:
+            portfolio["updated_at"] = utc_now()
             self._save_state(uid, state)
         return out
 
@@ -446,6 +483,26 @@ class FirestoreRepository:
             "equity_curve": curve,
         }
 
+    def deposit_cash(self, uid: str, market: str, amount: float, notes: str = "") -> dict[str, Any]:
+        state = self._load_state(uid)
+        portfolio, _ = self._ensure_market_bucket(state, market)
+        deposit_amount = round(_f(amount), 2)
+        if deposit_amount <= 0:
+            raise ValueError("Deposit amount must be greater than zero")
+
+        current_cash = _f(portfolio.get("cash"), 0.0)
+        portfolio["cash"] = round(current_cash + deposit_amount, 2)
+        portfolio["updated_at"] = utc_now()
+        self._save_state(uid, state)
+
+        return {
+            "market": market,
+            "amount": deposit_amount,
+            "cash": round(_f(portfolio.get("cash"), 0.0), 2),
+            "notes": notes or "",
+            "portfolio": self.get_portfolio(uid, market),
+        }
+
     def apply_trade(
         self,
         uid: str,
@@ -469,6 +526,10 @@ class FirestoreRepository:
             raise ValueError("Price must be greater than zero")
 
         pos = positions.get(symbol, {"symbol": symbol, "shares": 0, "avg_price": 0.0})
+        # Heal stale position rows for this symbol before enforcing sell checks.
+        if self._net_shares_for_symbol(state, market, symbol) <= 0:
+            positions.pop(symbol, None)
+            pos = {"symbol": symbol, "shares": 0, "avg_price": 0.0}
         shares = _i(pos.get("shares"), 0)
         avg_price = _f(pos.get("avg_price"), 0.0)
         trade_value = round(px * qty, 2)

@@ -50,6 +50,7 @@ Session is verified from Bearer token or `ss_id_token` cookie in middleware.
 - Portfolio/trades/journal:
   - `GET /api/portfolio`
   - `GET /api/portfolio/performance`
+  - `POST /api/portfolio/deposit`
   - `POST /api/trades/buy`
   - `POST /api/trades/sell`
   - `GET /api/trades/history`

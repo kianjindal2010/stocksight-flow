@@ -19,6 +19,11 @@
                     <label class="form-label">Target Return (%)</label>
                     <input class="form-control" name="target_return_pct" type="number" step="0.01" value="{{ goal.target_return_pct or 0 }}" required>
                 </div>
+                <div class="col-md-6">
+                    <label class="form-label">Goal Deadline</label>
+                    <input class="form-control" name="target_deadline" type="date" value="{{ goal.target_deadline or '' }}">
+                    <div class="small text-muted mt-1">Optional: set when you want to hit this goal.</div>
+                </div>
                 <div class="col-12">
                     <button class="btn btn-primary w-100" type="submit">Save Goal</button>
                 </div>
@@ -45,6 +50,19 @@
                         <div class="context-label">Current Return</div>
                         <div class="context-value h3 mb-0">{{ "%.2f"|format(performance.return_total_pct or 0) }}%</div>
                         <div class="small text-muted mt-1">{{ "%.2f"|format(progress_return or 0) }}% of target</div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="context-card p-3">
+                        <div class="context-label">Deadline Status</div>
+                        <div class="context-value h3 mb-0">{{ goal_deadline.label }}</div>
+                        <div class="small text-muted mt-1">
+                            {% if goal_deadline.has_deadline %}
+                            Target date: {{ goal_deadline.target_deadline }}
+                            {% else %}
+                            Add a deadline to track urgency on your dashboard.
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
             </div>

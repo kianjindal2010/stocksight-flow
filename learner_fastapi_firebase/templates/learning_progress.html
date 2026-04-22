@@ -19,6 +19,7 @@
                         <div class="small text-muted">Progress</div>
                         <div class="h3 fw-bold mb-1">{{ dashboard.learning_progress_pct }}%</div>
                         <div class="small text-muted">{{ completed_modules }} / {{ total_modules }} modules completed</div>
+                        <a class="small d-inline-block mt-2" href="/modules">Open module roadmap</a>
                     </div>
                 </div>
                 <div class="col-md-4">
@@ -33,6 +34,7 @@
                         <div class="small text-muted">Quiz Progress</div>
                         <div class="h3 fw-bold mb-1">{{ quizzes.completed or 0 }}</div>
                         <div class="small text-muted">Quizzes completed, streak {{ quizzes.streak or 0 }} day(s)</div>
+                        <a class="small d-inline-block mt-2" href="/quizzes">Take a concept check</a>
                     </div>
                 </div>
             </div>

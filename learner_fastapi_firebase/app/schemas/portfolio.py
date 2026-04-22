@@ -27,3 +27,8 @@ class TradeJournalUpdateRequest(BaseModel):
     reason_for_exit: str | None = None
     lessons_learned: str | None = None
     outcome_review: str | None = None
+
+
+class CashDepositRequest(BaseModel):
+    amount: float = Field(gt=0)
+    notes: str = ""

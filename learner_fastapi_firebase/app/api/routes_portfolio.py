@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..dependencies import current_uid, get_repository
-from ..schemas.portfolio import TradeJournalUpdateRequest, TradeRequest
+from ..schemas.portfolio import CashDepositRequest, TradeJournalUpdateRequest, TradeRequest
 
 
 router = APIRouter(tags=["portfolio"])
@@ -26,6 +26,15 @@ def get_portfolio(request: Request, uid: str = Depends(current_uid), repo=Depend
 def get_portfolio_performance(request: Request, uid: str = Depends(current_uid), repo=Depends(get_repository)):
     market = repo.get_selected_market(uid)
     return repo.get_portfolio_performance(uid, market)
+
+
+@router.post("/api/portfolio/deposit")
+def deposit_cash(payload: CashDepositRequest, request: Request, uid: str = Depends(current_uid), repo=Depends(get_repository)):
+    market = repo.get_selected_market(uid)
+    try:
+        return repo.deposit_cash(uid=uid, market=market, amount=payload.amount, notes=payload.notes)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/api/trades/buy")

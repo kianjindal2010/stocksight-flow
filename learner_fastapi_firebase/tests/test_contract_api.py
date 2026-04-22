@@ -129,6 +129,28 @@ def test_trade_buy_rejects_both_trailing_percent_and_amount(client, auth_headers
     assert response.status_code == 422
 
 
+def test_portfolio_deposit_increases_cash(client, auth_headers):
+    before = client.get("/api/portfolio", headers=auth_headers)
+    assert before.status_code == 200
+    before_cash = before.json()["cash"]
+
+    deposit = client.post(
+        "/api/portfolio/deposit",
+        headers=auth_headers,
+        json={"amount": 500, "notes": "manual top-up"},
+    )
+    assert deposit.status_code == 200
+    payload = deposit.json()
+    assert payload["amount"] == 500
+    assert payload["cash"] == before_cash + 500
+    assert payload["portfolio"]["cash"] == before_cash + 500
+
+
+def test_portfolio_deposit_requires_positive_amount(client, auth_headers):
+    response = client.post("/api/portfolio/deposit", headers=auth_headers, json={"amount": 0})
+    assert response.status_code == 422
+
+
 def test_watchlist_crud(client, auth_headers):
     create = client.post("/api/watchlists", headers=auth_headers, json={"name": "Tech", "symbols": ["AAPL"]})
     assert create.status_code == 200
@@ -182,6 +204,27 @@ def test_dashboard_refreshes_position_prices_from_quote_feed(client, auth_header
     assert response.status_code == 200
     assert "$150.00" in response.text
     assert "$10100.00" in response.text
+
+
+def test_modules_page_completion_updates_learning_progress(client, auth_headers):
+    page = client.get("/modules", headers=auth_headers)
+    assert page.status_code == 200
+    assert "Learning Modules" in page.text
+
+    submit = client.post(
+        "/modules/complete",
+        headers=auth_headers,
+        data={"module_id": "market_basics", "action": "complete"},
+    )
+    assert submit.status_code == 200
+
+    progress = client.app.state.repo.get_learning_doc("test-user", "progress", default={})
+    assert progress.get("completed_modules") == 1
+    assert "market_basics" in (progress.get("completed_module_ids") or [])
+
+    learning_page = client.get("/learning-progress", headers=auth_headers)
+    assert learning_page.status_code == 200
+    assert "1 / 20 modules completed" in learning_page.text
 
 
 def test_protected_routes_require_auth(client):

@@ -8,6 +8,7 @@
 {% set total_class = "performance-up" if (dashboard.simple_return_pct or 0) >= 0 else "performance-down" %}
 {% set benchmark_class = "performance-up" if (benchmark.change_pct or 0) >= 0 else "performance-down" %}
 {% set risk_class = "status-ok" if coach.risk_level == "Low" else ("status-caution" if coach.risk_level == "Medium" else "status-avoid") %}
+{% set deadline_class = "performance-down" if goal_deadline.is_overdue else ("text-warning" if goal_deadline.is_due_today else "performance-up") %}
 
 <div class="dashboard-layout dashboard-v2">
     <div class="row g-4">
@@ -39,7 +40,7 @@
             </div>
         </div>
 
-        <div class="col-md-4">
+        <div class="col-md-3">
             <div class="card summary-card summary-card--value h-100">
                 <div class="card-body">
                     <div class="summary-label">Portfolio Value</div>
@@ -48,7 +49,7 @@
                 </div>
             </div>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-3">
             <div class="card summary-card summary-card--today h-100">
                 <div class="card-body">
                     <div class="summary-label">Return (Today)</div>
@@ -57,12 +58,28 @@
                 </div>
             </div>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-3">
             <div class="card summary-card summary-card--total h-100">
                 <div class="card-body">
                     <div class="summary-label">Return (Total)</div>
                     <div id="totalReturn" class="summary-value fw-bold h3 mb-1 {{ total_class }}">{{ "%+.2f"|format(dashboard.simple_return_pct or 0) }}%</div>
                     <div class="summary-subvalue">Since first simulated investment</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card summary-card h-100">
+                <div class="card-body">
+                    <div class="summary-label">Goal Deadline</div>
+                    <div id="goalDeadlineText" class="summary-value fw-bold h3 mb-1 {{ deadline_class }}">{{ goal_deadline.label }}</div>
+                    <div id="goalDeadlineDate" class="summary-subvalue">
+                        {% if goal_deadline.has_deadline %}
+                        Target date: {{ goal_deadline.target_deadline }}
+                        {% else %}
+                        Set your deadline in Portfolio Goals
+                        {% endif %}
+                    </div>
+                    <a class="small d-inline-block mt-2" href="/portfolio-goals">Manage goal</a>
                 </div>
             </div>
         </div>
@@ -111,11 +128,11 @@
                         <tfoot>
                             <tr>
                                 <th colspan="7" class="text-end">Cash</th>
-                                <th>{{ currency_symbol }}{{ "%.2f"|format(portfolio.cash or 0) }}</th>
+                                <th id="portfolioCash">{{ currency_symbol }}{{ "%.2f"|format(portfolio.cash or 0) }}</th>
                             </tr>
                             <tr>
                                 <th colspan="7" class="text-end">Grand Total</th>
-                                <th>{{ currency_symbol }}{{ "%.2f"|format(portfolio.total_value or 0) }}</th>
+                                <th id="portfolioGrandTotal">{{ currency_symbol }}{{ "%.2f"|format(portfolio.total_value or 0) }}</th>
                             </tr>
                         </tfoot>
                     </table>
@@ -124,6 +141,27 @@
         </div>
 
         <div class="col-lg-4 d-grid gap-3">
+            <div class="card card-metric">
+                <div class="card-metric-header metric-tone-news">
+                    <div class="card-metric-header-title">Add Cash</div>
+                    <div class="card-metric-subtitle">Top up paper trading balance</div>
+                </div>
+                <div class="card-body">
+                    <form id="addCashForm" class="d-grid gap-2">
+                        <div>
+                            <label for="depositAmount" class="form-label">Amount</label>
+                            <input id="depositAmount" name="amount" class="form-control" type="number" step="0.01" min="0.01" required>
+                        </div>
+                        <div>
+                            <label for="depositNotes" class="form-label">Note (optional)</label>
+                            <input id="depositNotes" name="notes" class="form-control" type="text" maxlength="160" placeholder="e.g. Monthly paper capital top-up">
+                        </div>
+                        <button id="depositSubmitBtn" class="btn btn-primary" type="submit">Add Cash</button>
+                    </form>
+                    <div id="depositFeedback" class="alert d-none mt-3 mb-0" role="alert"></div>
+                </div>
+            </div>
+
             <div class="card card-metric card-metric-gainers">
                 <div class="card-metric-header metric-tone-gainers">
                     <div class="card-metric-header-title">Top Performers</div>
@@ -226,6 +264,7 @@
             const news = Array.isArray(data.news) ? data.news : [];
             const currency = data.currency_symbol || "$";
             const portfolio = data.portfolio || {};
+            const goalDeadline = data.goal_deadline || {};
 
             const benchmarkValue = document.getElementById("benchmarkValue");
             const benchmarkChange = document.getElementById("benchmarkChange");
@@ -233,8 +272,12 @@
             const marketStatusValue = document.getElementById("marketStatusValue");
             const learningProgressValue = document.getElementById("learningProgressValue");
             const portfolioValue = document.getElementById("portfolioValue");
+            const portfolioCash = document.getElementById("portfolioCash");
+            const portfolioGrandTotal = document.getElementById("portfolioGrandTotal");
             const todayReturn = document.getElementById("todayReturn");
             const totalReturn = document.getElementById("totalReturn");
+            const goalDeadlineText = document.getElementById("goalDeadlineText");
+            const goalDeadlineDate = document.getElementById("goalDeadlineDate");
             const marketHeadlines = document.getElementById("marketHeadlines");
 
             if (benchmarkValue) benchmarkValue.textContent = currency + Number(benchmark.price || 0).toFixed(2);
@@ -248,6 +291,8 @@
             if (marketStatusValue) marketStatusValue.textContent = String(marketSession.label || "Closed");
             if (learningProgressValue) learningProgressValue.textContent = String(Math.round(Number(dashboard.learning_progress_pct || 0))) + "%";
             if (portfolioValue) portfolioValue.textContent = currency + Number(portfolio.total_value || 0).toFixed(2);
+            if (portfolioCash) portfolioCash.textContent = currency + Number(portfolio.cash || 0).toFixed(2);
+            if (portfolioGrandTotal) portfolioGrandTotal.textContent = currency + Number(portfolio.total_value || 0).toFixed(2);
             if (todayReturn) {
                 const change = Number(dashboard.changed_today_pct || 0);
                 todayReturn.textContent = fmtSignedPct(change);
@@ -259,6 +304,22 @@
                 totalReturn.textContent = fmtSignedPct(change);
                 totalReturn.classList.remove("performance-up", "performance-down");
                 totalReturn.classList.add(classForChange(change));
+            }
+            if (goalDeadlineText) {
+                goalDeadlineText.textContent = String(goalDeadline.label || "No deadline set");
+                goalDeadlineText.classList.remove("performance-up", "performance-down", "text-warning");
+                if (goalDeadline.is_overdue) {
+                    goalDeadlineText.classList.add("performance-down");
+                } else if (goalDeadline.is_due_today) {
+                    goalDeadlineText.classList.add("text-warning");
+                } else if (goalDeadline.has_deadline) {
+                    goalDeadlineText.classList.add("performance-up");
+                }
+            }
+            if (goalDeadlineDate) {
+                goalDeadlineDate.textContent = goalDeadline.has_deadline
+                    ? ("Target date: " + String(goalDeadline.target_deadline || ""))
+                    : "Set your deadline in Portfolio Goals";
             }
             if (marketHeadlines) {
                 if (!news.length) {
@@ -303,6 +364,57 @@
         }
     }
 
+    async function submitDeposit(ev) {
+        ev.preventDefault();
+        const amountInput = document.getElementById("depositAmount");
+        const notesInput = document.getElementById("depositNotes");
+        const submitBtn = document.getElementById("depositSubmitBtn");
+        const feedback = document.getElementById("depositFeedback");
+        if (!amountInput || !submitBtn || !feedback) return;
+
+        const amount = Number(amountInput.value || 0);
+        const notes = notesInput ? String(notesInput.value || "").trim() : "";
+        if (!(amount > 0)) {
+            feedback.className = "alert alert-danger mt-3 mb-0";
+            feedback.textContent = "Please enter a valid amount greater than 0.";
+            feedback.classList.remove("d-none");
+            return;
+        }
+
+        submitBtn.disabled = true;
+        try {
+            const res = await fetch("/api/portfolio/deposit", {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ amount, notes }),
+            });
+            const payload = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                const detail = String(payload.detail || "Unable to add cash right now.");
+                feedback.className = "alert alert-danger mt-3 mb-0";
+                feedback.textContent = detail;
+                feedback.classList.remove("d-none");
+                return;
+            }
+
+            feedback.className = "alert alert-success mt-3 mb-0";
+            feedback.textContent = "Cash added successfully.";
+            feedback.classList.remove("d-none");
+            amountInput.value = "";
+            if (notesInput) notesInput.value = "";
+            await refreshDashboardSummary();
+        } catch (err) {
+            feedback.className = "alert alert-danger mt-3 mb-0";
+            feedback.textContent = "Network error. Please try again.";
+            feedback.classList.remove("d-none");
+            console.debug("Deposit failed", err);
+        } finally {
+            submitBtn.disabled = false;
+        }
+    }
+
+    document.getElementById("addCashForm")?.addEventListener("submit", submitDeposit);
     refreshDashboardSummary();
     loadCoach();
     window.setInterval(refreshDashboardSummary, 30000);

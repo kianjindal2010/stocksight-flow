@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from time import perf_counter
 from typing import Any
@@ -49,6 +49,13 @@ def _f(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _i(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _currency_symbol(code: str) -> str:
     mapping = {"USD": "$", "INR": "Rs.", "GBP": "GBP "}
     return mapping.get(code.upper(), f"{code.upper()} ")
@@ -56,6 +63,238 @@ def _currency_symbol(code: str) -> str:
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _parse_goal_deadline(value: Any) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _goal_deadline_status(goal: dict[str, Any]) -> dict[str, Any]:
+    deadline_dt = _parse_goal_deadline(goal.get("target_deadline"))
+    if not deadline_dt:
+        return {
+            "has_deadline": False,
+            "target_deadline": "",
+            "days_left": None,
+            "is_due_today": False,
+            "is_overdue": False,
+            "label": "No deadline set",
+        }
+    today = datetime.now(timezone.utc).date()
+    deadline_date = deadline_dt.date()
+    days_left = (deadline_date - today).days
+    if days_left > 0:
+        label = f"{days_left} day{'s' if days_left != 1 else ''} left"
+    elif days_left == 0:
+        label = "Due today"
+    else:
+        overdue_days = abs(days_left)
+        label = f"Overdue by {overdue_days} day{'s' if overdue_days != 1 else ''}"
+    return {
+        "has_deadline": True,
+        "target_deadline": deadline_date.isoformat(),
+        "days_left": days_left,
+        "is_due_today": days_left == 0,
+        "is_overdue": days_left < 0,
+        "label": label,
+    }
+
+
+def _quiz_default_doc() -> dict[str, Any]:
+    return {
+        "streak": 0,
+        "completed": 0,
+        "history": [],
+        "milestones": [
+            "Finish first concept check",
+            "Finish 5 quizzes",
+            "Finish 20 trade-based questions",
+        ],
+    }
+
+
+def _quiz_question_bank() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "q1",
+            "module": "Market Basics",
+            "prompt": "What does owning one share of a company represent?",
+            "choices": [
+                "A fixed loan to the company",
+                "A small ownership stake in the company",
+                "A guarantee of yearly profit",
+                "A short-term insurance contract",
+            ],
+            "answer_index": 1,
+            "explanation": "A stock share is equity ownership, not a loan or guaranteed return.",
+        },
+        {
+            "id": "q2",
+            "module": "Risk and Return",
+            "prompt": "Higher expected return usually comes with:",
+            "choices": [
+                "Lower risk",
+                "No risk at all",
+                "Higher risk",
+                "Fixed and predictable outcomes",
+            ],
+            "answer_index": 2,
+            "explanation": "Risk and return are generally linked. Higher expected upside typically means higher uncertainty.",
+        },
+        {
+            "id": "q3",
+            "module": "Diversification",
+            "prompt": "Diversification helps mainly by:",
+            "choices": [
+                "Eliminating all market risk",
+                "Spreading risk across different assets",
+                "Guaranteeing profit every month",
+                "Replacing research with random picks",
+            ],
+            "answer_index": 1,
+            "explanation": "Diversification lowers concentration risk, but cannot remove all market risk.",
+        },
+        {
+            "id": "q4",
+            "module": "Order Types",
+            "prompt": "A limit buy order executes when price is:",
+            "choices": [
+                "At or below your limit price",
+                "At any price immediately",
+                "Only above your limit price",
+                "Only at market close",
+            ],
+            "answer_index": 0,
+            "explanation": "A limit buy sets a maximum purchase price.",
+        },
+        {
+            "id": "q5",
+            "module": "Order Types",
+            "prompt": "A stop-loss order is mainly used to:",
+            "choices": [
+                "Increase leverage quickly",
+                "Lock in a fixed profit",
+                "Limit downside on a position",
+                "Predict future earnings",
+            ],
+            "answer_index": 2,
+            "explanation": "Stop-loss orders are a risk-control tool that can cap downside when price moves against you.",
+        },
+        {
+            "id": "q6",
+            "module": "Long-Term Investing",
+            "prompt": "Compounding works best when you:",
+            "choices": [
+                "Invest consistently for long periods",
+                "Trade all-in on one stock",
+                "Withdraw gains every week",
+                "Ignore position sizing",
+            ],
+            "answer_index": 0,
+            "explanation": "Compounding benefits from time and consistency.",
+        },
+        {
+            "id": "q7",
+            "module": "Behavioral Finance",
+            "prompt": "Which is a common behavioral mistake?",
+            "choices": [
+                "Writing a trade thesis before entry",
+                "Panic selling after short-term volatility",
+                "Using position size limits",
+                "Reviewing losing trades for lessons",
+            ],
+            "answer_index": 1,
+            "explanation": "Emotion-driven panic selling is a classic behavioral bias.",
+        },
+        {
+            "id": "q8",
+            "module": "ETFs and Mutual Funds",
+            "prompt": "An ETF is typically:",
+            "choices": [
+                "A single-company stock",
+                "A fund holding a basket of assets",
+                "A guaranteed-return bond",
+                "A bank savings account",
+            ],
+            "answer_index": 1,
+            "explanation": "ETFs usually hold diversified baskets and trade like stocks.",
+        },
+        {
+            "id": "q9",
+            "module": "Portfolio Discipline",
+            "prompt": "Position sizing is important because it:",
+            "choices": [
+                "Makes every trade a winner",
+                "Controls how much one mistake can hurt",
+                "Eliminates market volatility",
+                "Removes the need for stop-losses",
+            ],
+            "answer_index": 1,
+            "explanation": "Sizing limits damage from any single bad trade.",
+        },
+        {
+            "id": "q10",
+            "module": "Market Awareness",
+            "prompt": "A strong negative market mood should usually make you:",
+            "choices": [
+                "Increase risk aggressively",
+                "Ignore your risk plan",
+                "Review risk controls and stay selective",
+                "Double every losing position",
+            ],
+            "answer_index": 2,
+            "explanation": "Weak sentiment is a signal to tighten discipline and risk checks.",
+        },
+    ]
+
+
+def _quiz_report(questions: list[dict[str, Any]], selected_answers: dict[str, str]) -> dict[str, Any]:
+    details: list[dict[str, Any]] = []
+    correct = 0
+    unanswered = 0
+    for question in questions:
+        question_id = str(question.get("id") or "")
+        choices = question.get("choices") if isinstance(question.get("choices"), list) else []
+        selected_raw = str(selected_answers.get(question_id, "")).strip()
+        selected_idx = _i(selected_raw, -1)
+        in_range = 0 <= selected_idx < len(choices)
+        selected_text = str(choices[selected_idx]) if in_range else ""
+        answer_idx = _i(question.get("answer_index"), -1)
+        answer_in_range = 0 <= answer_idx < len(choices)
+        correct_text = str(choices[answer_idx]) if answer_in_range else ""
+        is_correct = in_range and answer_in_range and selected_idx == answer_idx
+        if not in_range:
+            unanswered += 1
+        if is_correct:
+            correct += 1
+        details.append(
+            {
+                "id": question_id,
+                "prompt": str(question.get("prompt") or ""),
+                "selected_text": selected_text,
+                "correct_text": correct_text,
+                "is_correct": is_correct,
+                "explanation": str(question.get("explanation") or ""),
+            }
+        )
+    total = len(questions)
+    safe_total = max(1, total)
+    score_pct = int(round((correct / safe_total) * 100))
+    return {
+        "total": total,
+        "correct": correct,
+        "incorrect": max(0, total - correct),
+        "unanswered": unanswered,
+        "score_pct": score_pct,
+        "passed": score_pct >= 70,
+        "details": details,
+    }
 
 
 def create_app() -> FastAPI:
@@ -361,6 +600,105 @@ def create_app() -> FastAPI:
     def _save_chat_history(uid: str, market: str, messages: list[dict[str, Any]]) -> None:
         app.state.repo.set_learning_doc(uid, _chat_doc_id(market), {"messages": messages[-30:]}, merge=False)
 
+    def _quizzes_page_payload(
+        uid: str,
+        *,
+        result: dict[str, Any] | None = None,
+        selected_answers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        quiz_doc = app.state.repo.get_learning_doc(uid, "quizzes", default=_quiz_default_doc())
+        streaks = app.state.repo.get_learning_doc(
+            uid,
+            "streaks",
+            default={"learning_streak_days": 0, "quiz_streak_days": 0, "challenge_streak_days": 0},
+        )
+        history_raw = quiz_doc.get("history") if isinstance(quiz_doc.get("history"), list) else []
+        history = [row for row in history_raw if isinstance(row, dict)]
+        return {
+            "questions": _quiz_question_bank(),
+            "quiz_state": quiz_doc,
+            "streaks": streaks,
+            "quiz_history": list(reversed(history[-5:])),
+            "result": result,
+            "selected_answers": selected_answers or {},
+        }
+
+    def _module_progress_state(uid: str) -> dict[str, Any]:
+        curriculum = app.state.learning_engine.curriculum()
+        module_ids = [str(row.get("id") or "") for row in curriculum if str(row.get("id") or "").strip()]
+        default_next = f"Start module 1: {curriculum[0]['title']}." if curriculum else "Complete your next concept check."
+        progress_doc = app.state.repo.get_learning_doc(
+            uid,
+            "progress",
+            default={
+                "completed_modules": 0,
+                "total_modules": len(module_ids) or 20,
+                "completed_module_ids": [],
+                "next_step": default_next,
+            },
+        )
+        completed_raw = progress_doc.get("completed_module_ids") if isinstance(progress_doc.get("completed_module_ids"), list) else []
+        completed_ids: list[str] = []
+        seen: set[str] = set()
+        for raw_id in completed_raw:
+            module_id = str(raw_id or "").strip()
+            if not module_id or module_id not in module_ids or module_id in seen:
+                continue
+            completed_ids.append(module_id)
+            seen.add(module_id)
+
+        if not completed_ids:
+            fallback_completed = max(0, min(_i(progress_doc.get("completed_modules"), 0), len(module_ids)))
+            completed_ids = module_ids[:fallback_completed]
+
+        completed_set = set(completed_ids)
+        total_modules = len(module_ids) if module_ids else max(1, _i(progress_doc.get("total_modules"), 20))
+        return {
+            "curriculum": curriculum,
+            "module_ids": module_ids,
+            "progress_doc": progress_doc,
+            "completed_ids": completed_ids,
+            "completed_set": completed_set,
+            "completed_count": len(completed_set),
+            "total_modules": total_modules,
+        }
+
+    def _next_module_step(curriculum: list[dict[str, Any]], completed_set: set[str]) -> str:
+        for idx, module in enumerate(curriculum, start=1):
+            module_id = str(module.get("id") or "")
+            if module_id and module_id not in completed_set:
+                return f"Complete module {idx}: {module.get('title') or 'Next Module'}."
+        return "Great momentum. Keep reinforcing with concept checks and trade journaling."
+
+    def _modules_page_payload(uid: str) -> dict[str, Any]:
+        state = _module_progress_state(uid)
+        curriculum = state["curriculum"]
+        completed_set = state["completed_set"]
+        rows: list[dict[str, Any]] = []
+        for idx, module in enumerate(curriculum, start=1):
+            module_id = str(module.get("id") or "")
+            rows.append(
+                {
+                    **module,
+                    "index": idx,
+                    "is_completed": module_id in completed_set,
+                }
+            )
+        total_modules = max(1, state["total_modules"])
+        completed_count = state["completed_count"]
+        progress_pct = int(round((completed_count / total_modules) * 100))
+        next_step = _next_module_step(curriculum, completed_set)
+        return {
+            "modules": rows,
+            "progress": {
+                "completed_modules": completed_count,
+                "total_modules": total_modules,
+                "progress_pct": progress_pct,
+                "next_step": next_step,
+            },
+            "progress_doc": state["progress_doc"],
+        }
+
     @app.get("/", response_class=HTMLResponse)
     async def home(request: Request):
         uid = _auth_or_redirect(request)
@@ -403,6 +741,8 @@ def create_app() -> FastAPI:
         top_positions = sorted(positions, key=lambda row: _f(row.get("change_pct")), reverse=True)[:4]
         worst_positions = sorted(positions, key=lambda row: _f(row.get("change_pct")))[:4]
         currency_code = str(benchmark.get("currency") or "USD")
+        goal = app.state.repo.get_learning_doc(uid, "portfolio_goal", default={})
+        goal_deadline = _goal_deadline_status(goal)
         coach = _coach_loading_placeholder()
         return templates.TemplateResponse(
             request,
@@ -422,6 +762,7 @@ def create_app() -> FastAPI:
                     "market_session": market_session,
                     "currency_code": currency_code,
                     "currency_symbol": _currency_symbol(currency_code),
+                    "goal_deadline": goal_deadline,
                 },
             ),
         )
@@ -602,6 +943,8 @@ def create_app() -> FastAPI:
         top_positions = sorted(positions, key=lambda row: _f(row.get("change_pct")), reverse=True)[:4]
         worst_positions = sorted(positions, key=lambda row: _f(row.get("change_pct")))[:4]
         currency_code = str(benchmark.get("currency") or "USD")
+        goal = app.state.repo.get_learning_doc(uid, "portfolio_goal", default={})
+        goal_deadline = _goal_deadline_status(goal)
         return {
             "market": market,
             "dashboard": dashboard,
@@ -614,6 +957,7 @@ def create_app() -> FastAPI:
             "worst_positions": worst_positions,
             "currency_code": currency_code,
             "currency_symbol": _currency_symbol(currency_code),
+            "goal_deadline": goal_deadline,
         }
 
     @app.get("/watchlist", response_class=HTMLResponse)
@@ -941,8 +1285,9 @@ def create_app() -> FastAPI:
         goal = app.state.repo.get_learning_doc(
             uid,
             "portfolio_goal",
-            default={"target_value": 250000.0, "target_return_pct": 25.0},
+            default={"target_value": 250000.0, "target_return_pct": 25.0, "target_deadline": ""},
         )
+        goal_deadline = _goal_deadline_status(goal)
         progress_value = (_f(portfolio.get("total_value")) / _f(goal.get("target_value"), 1)) * 100 if _f(goal.get("target_value")) else 0.0
         progress_return = (_f(perf.get("return_total_pct")) / _f(goal.get("target_return_pct"), 1)) * 100 if _f(goal.get("target_return_pct")) else 0.0
         return templates.TemplateResponse(
@@ -956,6 +1301,7 @@ def create_app() -> FastAPI:
                     "performance": perf,
                     "progress_value": round(progress_value, 2),
                     "progress_return": round(progress_return, 2),
+                    "goal_deadline": goal_deadline,
                 },
             ),
         )
@@ -965,14 +1311,22 @@ def create_app() -> FastAPI:
         request: Request,
         target_value: float = Form(...),
         target_return_pct: float = Form(...),
+        target_deadline: str = Form(""),
     ):
         uid = _auth_or_redirect(request)
         if isinstance(uid, RedirectResponse):
             return uid
+        parsed_deadline = _parse_goal_deadline(target_deadline)
+        if str(target_deadline or "").strip() and not parsed_deadline:
+            return _redirect("/portfolio-goals", error="Please choose a valid goal deadline.")
         app.state.repo.set_learning_doc(
             uid,
             "portfolio_goal",
-            {"target_value": target_value, "target_return_pct": target_return_pct},
+            {
+                "target_value": target_value,
+                "target_return_pct": target_return_pct,
+                "target_deadline": parsed_deadline.date().isoformat() if parsed_deadline else None,
+            },
             merge=True,
         )
         return _redirect("/portfolio-goals", message="Portfolio goals saved.")
@@ -1039,7 +1393,12 @@ def create_app() -> FastAPI:
         progress_doc = app.state.repo.get_learning_doc(
             uid,
             "progress",
-            default={"completed_modules": 0, "total_modules": 20, "next_step": dashboard.get("next_step", "")},
+            default={
+                "completed_modules": 0,
+                "total_modules": len(curriculum) or 20,
+                "completed_module_ids": [],
+                "next_step": dashboard.get("next_step", ""),
+            },
         )
         quizzes = app.state.repo.get_learning_doc(uid, "quizzes", default={"completed": 0, "streak": 0})
         streaks = app.state.repo.get_learning_doc(
@@ -1085,6 +1444,138 @@ def create_app() -> FastAPI:
                     "learning_actions": actions[:6],
                 },
             ),
+        )
+
+    @app.get("/modules", response_class=HTMLResponse)
+    async def modules_page(request: Request):
+        uid = _auth_or_redirect(request)
+        if isinstance(uid, RedirectResponse):
+            return uid
+        return templates.TemplateResponse(
+            request,
+            "modules.html",
+            _context(request, _modules_page_payload(uid)),
+        )
+
+    @app.post("/modules/complete")
+    async def modules_complete(request: Request):
+        uid = _auth_or_redirect(request)
+        if isinstance(uid, RedirectResponse):
+            return uid
+
+        form = await request.form()
+        module_id = str(form.get("module_id") or "").strip()
+        action = str(form.get("action") or "complete").strip().lower()
+
+        state = _module_progress_state(uid)
+        curriculum = state["curriculum"]
+        module_ids = state["module_ids"]
+        completed_ids = list(state["completed_ids"])
+        completed_set = set(completed_ids)
+
+        if module_id not in set(module_ids):
+            return _redirect("/modules", error="Module not found.")
+
+        if action == "undo":
+            completed_set.discard(module_id)
+            action_message = "Module marked as not completed."
+        else:
+            completed_set.add(module_id)
+            action_message = "Module marked as completed."
+
+        ordered_completed = [row_id for row_id in module_ids if row_id in completed_set]
+        next_step = _next_module_step(curriculum, completed_set)
+        app.state.repo.set_learning_doc(
+            uid,
+            "progress",
+            {
+                "completed_module_ids": ordered_completed,
+                "completed_modules": len(ordered_completed),
+                "total_modules": len(module_ids) or 20,
+                "next_step": next_step,
+                "updated_at": _utc_now_iso(),
+            },
+            merge=True,
+        )
+        return _redirect("/modules", message=action_message)
+
+    @app.get("/quizzes", response_class=HTMLResponse)
+    async def quizzes_page(request: Request):
+        uid = _auth_or_redirect(request)
+        if isinstance(uid, RedirectResponse):
+            return uid
+        return templates.TemplateResponse(
+            request,
+            "quizzes.html",
+            _context(request, _quizzes_page_payload(uid)),
+        )
+
+    @app.post("/quizzes/submit", response_class=HTMLResponse)
+    async def quizzes_submit(request: Request):
+        uid = _auth_or_redirect(request)
+        if isinstance(uid, RedirectResponse):
+            return uid
+
+        questions = _quiz_question_bank()
+        form = await request.form()
+        selected_answers: dict[str, str] = {}
+        for question in questions:
+            qid = str(question.get("id") or "")
+            selected_answers[qid] = str(form.get(f"answer_{qid}", "")).strip()
+
+        result = _quiz_report(questions, selected_answers)
+        now = datetime.now(timezone.utc)
+        today_iso = now.date().isoformat()
+        yesterday_iso = (now.date() - timedelta(days=1)).isoformat()
+
+        current = app.state.repo.get_learning_doc(uid, "quizzes", default=_quiz_default_doc())
+        previous_streak = _i(current.get("streak"), 0)
+        previous_completed = _i(current.get("completed"), 0)
+        last_completed_on = str(current.get("last_completed_on") or "").strip()
+
+        if last_completed_on == today_iso:
+            next_streak = max(1, previous_streak)
+        elif last_completed_on == yesterday_iso:
+            next_streak = max(1, previous_streak + 1)
+        else:
+            next_streak = 1
+
+        history_raw = current.get("history") if isinstance(current.get("history"), list) else []
+        history = [row for row in history_raw if isinstance(row, dict)][-19:]
+        history.append(
+            {
+                "submitted_at": now.isoformat(),
+                "score_pct": result["score_pct"],
+                "correct": result["correct"],
+                "total": result["total"],
+            }
+        )
+        milestones = current.get("milestones")
+        if not isinstance(milestones, list):
+            milestones = _quiz_default_doc()["milestones"]
+
+        app.state.repo.set_learning_doc(
+            uid,
+            "quizzes",
+            {
+                "completed": previous_completed + 1,
+                "streak": next_streak,
+                "last_completed_on": today_iso,
+                "last_submitted_at": now.isoformat(),
+                "last_score_pct": result["score_pct"],
+                "last_correct": result["correct"],
+                "last_total": result["total"],
+                "history": history,
+                "milestones": milestones,
+            },
+            merge=True,
+        )
+        app.state.repo.set_learning_doc(uid, "streaks", {"quiz_streak_days": next_streak}, merge=True)
+
+        return templates.TemplateResponse(
+            request,
+            "quizzes.html",
+            _context(request, _quizzes_page_payload(uid, result=result, selected_answers=selected_answers)),
         )
 
     @app.get("/leaderboard", response_class=HTMLResponse)
