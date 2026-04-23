@@ -476,8 +476,25 @@ class FirestoreRepository:
         portfolio = self.get_portfolio(uid, market)
         start = _f(portfolio.get("starting_cash"), 0.0)
         net_deposits = _f(portfolio.get("net_deposits"), 0.0)
+        realized = _f(portfolio.get("realized_pnl"), 0.0)
+        unrealized = _f(portfolio.get("unrealized_pnl"), 0.0)
         invested_capital = start + net_deposits
         total = _f(portfolio.get("total_value"), 0.0)
+
+        # One-time legacy migration support:
+        # accounts that had deposits before net_deposits/cash_flows existed can
+        # be inferred from accounting identity:
+        # total_value = starting_cash + net_deposits + realized + unrealized
+        inferred_legacy_deposits = total - start - realized - unrealized
+        if net_deposits <= 0 and inferred_legacy_deposits > 0.01:
+            net_deposits = round(inferred_legacy_deposits, 2)
+            invested_capital = start + net_deposits
+            bucket = state.get("portfolio", {}).get(market)
+            if isinstance(bucket, dict):
+                bucket["net_deposits"] = net_deposits
+                bucket["updated_at"] = utc_now()
+                self._save_state(uid, state)
+
         ret_total = ((total - invested_capital) / invested_capital) * 100 if invested_capital > 0 else 0.0
 
         trades = sorted(

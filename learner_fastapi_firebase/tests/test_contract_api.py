@@ -195,6 +195,55 @@ def test_portfolio_performance_today_return_includes_open_position_day_move(clie
     assert payload["return_today_pct"] != 0.0
 
 
+def test_portfolio_performance_infers_legacy_deposits_from_accounting_identity(client, auth_headers):
+    repo = client.app.state.repo
+    state = repo._load_state("test-user")
+    portfolio, _ = repo._ensure_market_bucket(state, "US")
+    portfolio["cash"] = 20000.0
+    portfolio["starting_cash"] = 10000.0
+    portfolio["realized_pnl"] = 0.0
+    portfolio["net_deposits"] = 0.0
+    repo._save_state("test-user", state)
+
+    perf = client.get("/api/portfolio/performance", headers=auth_headers)
+    assert perf.status_code == 200
+    payload = perf.json()
+    assert payload["return_total_pct"] == 0.0
+
+
+def test_dashboard_pl_pct_uses_price_vs_avg_fallback(client, auth_headers):
+    buy = client.post(
+        "/api/trades/buy",
+        headers=auth_headers,
+        json={
+            "symbol": "AAPL",
+            "quantity": 2,
+            "order_type": "market",
+            "notes": "pl pct fallback check",
+            "checklist": {
+                "thesis": "trend continuation",
+                "risk_level": "medium",
+                "time_horizon": "2 weeks",
+                "buy_reason": "pl fallback",
+                "trade_type": "speculative",
+            },
+        },
+    )
+    assert buy.status_code == 200
+
+    client.app.state.market_data.quote = lambda symbol, market: {  # type: ignore[assignment]
+        "symbol": "AAPL",
+        "name": "Apple Inc.",
+        "price": 120.0,
+        "change_pct": 2.5,
+        "currency": "USD",
+    }
+
+    home = client.get("/", headers=auth_headers)
+    assert home.status_code == 200
+    assert "+20.00%" in home.text
+
+
 def test_watchlist_crud(client, auth_headers):
     create = client.post("/api/watchlists", headers=auth_headers, json={"name": "Tech", "symbols": ["AAPL"]})
     assert create.status_code == 200

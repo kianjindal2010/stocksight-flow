@@ -106,8 +106,10 @@
                         </thead>
                         <tbody>
                             {% for row in positions %}
+                            {% set fallback_total_change_pct = (((row.last_price or 0) - (row.avg_price or 0)) / (row.avg_price or 1) * 100) if (row.avg_price or 0) > 0 else 0 %}
+                            {% set total_change_pct = row.total_change_pct if row.total_change_pct is defined else fallback_total_change_pct %}
                             {% set row_class = "performance-up" if (row.day_change_pct or 0) >= 0 else "performance-down" %}
-                            {% set total_class = "performance-up" if (row.total_change_pct or 0) >= 0 else "performance-down" %}
+                            {% set total_class = "performance-up" if (total_change_pct or 0) >= 0 else "performance-down" %}
                             {% set pnl_class = "performance-up" if (row.unrealized_pnl or 0) >= 0 else "performance-down" %}
                             <tr>
                                 <td><a href="/quote?symbol={{ row.symbol }}">{{ row.symbol }}</a></td>
@@ -116,7 +118,7 @@
                                 <td>{{ currency_symbol }}{{ "%.2f"|format(row.last_price or 0) }}</td>
                                 <td class="{{ row_class }}">{{ "%+.2f"|format(row.day_change_pct or 0) }}%</td>
                                 <td class="{{ pnl_class }}">{{ currency_symbol }}{{ "%+.2f"|format(row.unrealized_pnl or 0) }}</td>
-                                <td class="{{ total_class }}">{{ "%+.2f"|format(row.total_change_pct or 0) }}%</td>
+                                <td class="{{ total_class }}">{{ "%+.2f"|format(total_change_pct or 0) }}%</td>
                                 <td>{{ currency_symbol }}{{ "%.2f"|format(row.market_value or 0) }}</td>
                             </tr>
                             {% endfor %}
