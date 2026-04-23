@@ -850,7 +850,11 @@ def create_app() -> FastAPI:
         for pos in positions:
             avg = _f(pos.get("avg_price"))
             last = _f(pos.get("last_price"))
-            pos["change_pct"] = round(((last - avg) / avg * 100), 2) if avg else 0.0
+            total_change_pct = round(((last - avg) / avg * 100) if avg else 0.0, 2)
+            day_change_pct = round(_f(pos.get("day_change_pct"), total_change_pct), 2)
+            pos["total_change_pct"] = total_change_pct
+            pos["day_change_pct"] = day_change_pct
+            pos["change_pct"] = day_change_pct
             pos["market_value"] = round(_f(pos.get("market_value")), 2)
             pos["unrealized_pnl"] = round(_f(pos.get("unrealized_pnl")), 2)
         top_positions = sorted(positions, key=lambda row: _f(row.get("change_pct")), reverse=True)[:4]
@@ -937,7 +941,11 @@ def create_app() -> FastAPI:
         for pos in positions:
             avg = _f(pos.get("avg_price"))
             last = _f(pos.get("last_price"))
-            pos["change_pct"] = round(((last - avg) / avg * 100), 2) if avg else 0.0
+            total_change_pct = round(((last - avg) / avg * 100) if avg else 0.0, 2)
+            day_change_pct = round(_f(pos.get("day_change_pct"), total_change_pct), 2)
+            pos["total_change_pct"] = total_change_pct
+            pos["day_change_pct"] = day_change_pct
+            pos["change_pct"] = day_change_pct
             pos["market_value"] = round(_f(pos.get("market_value")), 2)
             pos["unrealized_pnl"] = round(_f(pos.get("unrealized_pnl")), 2)
         top_positions = sorted(positions, key=lambda row: _f(row.get("change_pct")), reverse=True)[:4]

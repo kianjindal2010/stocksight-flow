@@ -106,16 +106,17 @@
                         </thead>
                         <tbody>
                             {% for row in positions %}
-                            {% set row_class = "performance-up" if (row.change_pct or 0) >= 0 else "performance-down" %}
+                            {% set row_class = "performance-up" if (row.day_change_pct or 0) >= 0 else "performance-down" %}
+                            {% set total_class = "performance-up" if (row.total_change_pct or 0) >= 0 else "performance-down" %}
                             {% set pnl_class = "performance-up" if (row.unrealized_pnl or 0) >= 0 else "performance-down" %}
                             <tr>
                                 <td><a href="/quote?symbol={{ row.symbol }}">{{ row.symbol }}</a></td>
                                 <td>{{ row.shares }}</td>
                                 <td>{{ currency_symbol }}{{ "%.2f"|format(row.avg_price or 0) }}</td>
                                 <td>{{ currency_symbol }}{{ "%.2f"|format(row.last_price or 0) }}</td>
-                                <td class="{{ row_class }}">{{ "%+.2f"|format(row.change_pct or 0) }}%</td>
+                                <td class="{{ row_class }}">{{ "%+.2f"|format(row.day_change_pct or 0) }}%</td>
                                 <td class="{{ pnl_class }}">{{ currency_symbol }}{{ "%+.2f"|format(row.unrealized_pnl or 0) }}</td>
-                                <td class="{{ row_class }}">{{ "%+.2f"|format(row.change_pct or 0) }}%</td>
+                                <td class="{{ total_class }}">{{ "%+.2f"|format(row.total_change_pct or 0) }}%</td>
                                 <td>{{ currency_symbol }}{{ "%.2f"|format(row.market_value or 0) }}</td>
                             </tr>
                             {% endfor %}
@@ -171,7 +172,7 @@
                     {% for row in top_positions %}
                     <div class="list-group-item d-flex justify-content-between metric-list-item">
                         <span class="metric-list-symbol">{{ row.symbol }}</span>
-                        <span class="performance-up">{{ "%+.2f"|format(row.change_pct or 0) }}%</span>
+                        <span class="performance-up">{{ "%+.2f"|format(row.day_change_pct or 0) }}%</span>
                     </div>
                     {% endfor %}
                     {% if not top_positions %}
@@ -189,7 +190,7 @@
                     {% for row in worst_positions %}
                     <div class="list-group-item d-flex justify-content-between metric-list-item">
                         <span class="metric-list-symbol">{{ row.symbol }}</span>
-                        <span class="performance-down">{{ "%+.2f"|format(row.change_pct or 0) }}%</span>
+                        <span class="performance-down">{{ "%+.2f"|format(row.day_change_pct or 0) }}%</span>
                     </div>
                     {% endfor %}
                     {% if not worst_positions %}

@@ -151,6 +151,50 @@ def test_portfolio_deposit_requires_positive_amount(client, auth_headers):
     assert response.status_code == 422
 
 
+def test_portfolio_performance_total_return_excludes_cash_deposits(client, auth_headers):
+    deposit = client.post(
+        "/api/portfolio/deposit",
+        headers=auth_headers,
+        json={"amount": 10000, "notes": "top-up"},
+    )
+    assert deposit.status_code == 200
+
+    perf = client.get("/api/portfolio/performance", headers=auth_headers)
+    assert perf.status_code == 200
+    payload = perf.json()
+    assert payload["return_total_pct"] == 0.0
+
+
+def test_portfolio_performance_today_return_includes_open_position_day_move(client, auth_headers):
+    buy = client.post(
+        "/api/trades/buy",
+        headers=auth_headers,
+        json={
+            "symbol": "AAPL",
+            "quantity": 2,
+            "order_type": "market",
+            "notes": "today return check",
+            "checklist": {
+                "thesis": "trend continuation",
+                "risk_level": "medium",
+                "time_horizon": "2 weeks",
+                "buy_reason": "measure intraday move",
+                "trade_type": "speculative",
+            },
+        },
+    )
+    assert buy.status_code == 200
+
+    # Home route triggers price refresh and stores daily mark-to-market fields.
+    home = client.get("/", headers=auth_headers)
+    assert home.status_code == 200
+
+    perf = client.get("/api/portfolio/performance", headers=auth_headers)
+    assert perf.status_code == 200
+    payload = perf.json()
+    assert payload["return_today_pct"] != 0.0
+
+
 def test_watchlist_crud(client, auth_headers):
     create = client.post("/api/watchlists", headers=auth_headers, json={"name": "Tech", "symbols": ["AAPL"]})
     assert create.status_code == 200

@@ -30,7 +30,7 @@ class LearningEngine:
             return portfolio
         symbols = [str(pos.get("symbol") or "").upper().strip() for pos in positions]
         symbols = [symbol for symbol in symbols if symbol]
-        latest_prices: dict[str, float] = {}
+        latest_quotes: dict[str, dict[str, float]] = {}
         # For small portfolios, direct quotes stay accurate and simple.
         if len(symbols) <= 5:
             for symbol in symbols:
@@ -40,23 +40,37 @@ class LearningEngine:
                     continue
                 last_price = _f(quote.get("price"), 0.0)
                 if last_price > 0:
-                    latest_prices[symbol] = last_price
+                    change_pct = _f(quote.get("change_pct"), 0.0)
+                    previous_close = last_price / (1 + (change_pct / 100.0)) if change_pct > -100.0 else last_price
+                    latest_quotes[symbol] = {
+                        "price": last_price,
+                        "change_pct": change_pct,
+                        "previous_close": previous_close,
+                    }
         else:
-            latest_prices = self.market_data.batch_last_prices(symbols, market)
-            if len(latest_prices) < len(symbols):
-                for symbol in symbols:
-                    if symbol in latest_prices:
-                        continue
-                    try:
-                        quote = self.market_data.quote(symbol, market)
-                    except Exception:
-                        continue
-                    last_price = _f(quote.get("price"), 0.0)
-                    if last_price > 0:
-                        latest_prices[symbol] = last_price
-        if not latest_prices:
+            batch_prices = self.market_data.batch_last_prices(symbols, market)
+            for symbol in symbols:
+                price = _f(batch_prices.get(symbol), 0.0)
+                if price > 0:
+                    latest_quotes[symbol] = {"price": price, "change_pct": 0.0, "previous_close": price}
+            for symbol in symbols:
+                try:
+                    quote = self.market_data.quote(symbol, market)
+                except Exception:
+                    continue
+                last_price = _f(quote.get("price"), 0.0)
+                if last_price <= 0:
+                    continue
+                change_pct = _f(quote.get("change_pct"), 0.0)
+                previous_close = last_price / (1 + (change_pct / 100.0)) if change_pct > -100.0 else last_price
+                latest_quotes[symbol] = {
+                    "price": last_price,
+                    "change_pct": change_pct,
+                    "previous_close": previous_close,
+                }
+        if not latest_quotes:
             return portfolio
-        return self.repo.refresh_position_prices(uid, market, latest_prices)
+        return self.repo.refresh_position_prices(uid, market, latest_quotes)
 
     def dashboard(self, uid: str, market: str) -> dict[str, Any]:
         portfolio = self._refresh_portfolio_prices(uid, market)

@@ -78,6 +78,7 @@ class FirestoreRepository:
             "learning": {},
             "notifications": {},
             "orders": {},
+            "cash_flows": {},
         }
 
     def _normalize_state(self, uid: str, state: dict[str, Any]) -> dict[str, Any]:
@@ -100,6 +101,7 @@ class FirestoreRepository:
             "learning",
             "notifications",
             "orders",
+            "cash_flows",
         ]:
             state.setdefault(key, {})
         return state
@@ -355,9 +357,13 @@ class FirestoreRepository:
                 "market": market,
                 "cash": 10000.0,
                 "starting_cash": 10000.0,
+                "net_deposits": 0.0,
                 "realized_pnl": 0.0,
                 "updated_at": utc_now(),
             }
+            changed = True
+        elif "net_deposits" not in state["portfolio"][market]:
+            state["portfolio"][market]["net_deposits"] = 0.0
             changed = True
         if market not in state["positions"]:
             state["positions"][market] = {}
@@ -409,6 +415,7 @@ class FirestoreRepository:
             "market": market,
             "cash": round(_f(portfolio.get("cash")), 2),
             "starting_cash": round(_f(portfolio.get("starting_cash")), 2),
+            "net_deposits": round(_f(portfolio.get("net_deposits")), 2),
             "realized_pnl": round(_f(portfolio.get("realized_pnl")), 2),
             "unrealized_pnl": round(unrealized, 2),
             "market_value": round(market_value, 2),
@@ -421,7 +428,7 @@ class FirestoreRepository:
             self._save_state(uid, state)
         return out
 
-    def refresh_position_prices(self, uid: str, market: str, latest_prices: dict[str, float]) -> dict[str, Any]:
+    def refresh_position_prices(self, uid: str, market: str, latest_prices: dict[str, Any]) -> dict[str, Any]:
         state = self._load_state(uid)
         portfolio, changed = self._ensure_market_bucket(state, market)
         positions = state["positions"][market]
@@ -429,14 +436,30 @@ class FirestoreRepository:
         updated = False
         for symbol, row in positions.items():
             key = str(symbol).upper().strip()
-            last_price = _f(latest_prices.get(key), 0.0)
+            payload = latest_prices.get(key)
+            if isinstance(payload, dict):
+                last_price = _f(payload.get("price"), 0.0)
+                day_change_pct = _f(payload.get("change_pct"), _f(row.get("day_change_pct"), 0.0))
+                previous_close = _f(payload.get("previous_close"), _f(row.get("previous_close"), 0.0))
+            else:
+                last_price = _f(payload, 0.0)
+                day_change_pct = _f(row.get("day_change_pct"), 0.0)
+                previous_close = _f(row.get("previous_close"), 0.0)
             if last_price <= 0:
                 continue
             shares = max(0, _i(row.get("shares"), 0))
             avg_price = _f(row.get("avg_price"), 0.0)
+            if previous_close <= 0 and day_change_pct > -100.0:
+                previous_close = last_price / (1 + (day_change_pct / 100.0))
+            if previous_close <= 0:
+                previous_close = last_price
+            day_unrealized = (last_price - previous_close) * shares
             row["last_price"] = round(last_price, 4)
             row["market_value"] = round(shares * last_price, 2)
             row["unrealized_pnl"] = round((last_price - avg_price) * shares, 2)
+            row["previous_close"] = round(previous_close, 4)
+            row["day_change_pct"] = round(day_change_pct, 2)
+            row["day_unrealized_pnl"] = round(day_unrealized, 2)
             row["updated_at"] = utc_now()
             positions[symbol] = row
             updated = True
@@ -451,9 +474,11 @@ class FirestoreRepository:
     def get_portfolio_performance(self, uid: str, market: str) -> dict[str, Any]:
         state = self._load_state(uid)
         portfolio = self.get_portfolio(uid, market)
-        start = _f(portfolio.get("starting_cash"), 1.0)
+        start = _f(portfolio.get("starting_cash"), 0.0)
+        net_deposits = _f(portfolio.get("net_deposits"), 0.0)
+        invested_capital = start + net_deposits
         total = _f(portfolio.get("total_value"), 0.0)
-        ret_total = ((total - start) / start) * 100 if start > 0 else 0.0
+        ret_total = ((total - invested_capital) / invested_capital) * 100 if invested_capital > 0 else 0.0
 
         trades = sorted(
             [t for t in state["trades"].values() if t.get("market") == market],
@@ -465,17 +490,34 @@ class FirestoreRepository:
             daily_realized.setdefault(day, 0.0)
             daily_realized[day] += _f(trade.get("realized_pnl"), 0.0)
 
+        cash_flows = [
+            flow
+            for flow in state.get("cash_flows", {}).values()
+            if str(flow.get("market", "")).upper() == str(market).upper()
+            and str(flow.get("type", "")).lower() == "deposit"
+        ]
+        daily_deposits: dict[str, float] = {}
+        for flow in cash_flows:
+            day = str(flow.get("created_at", ""))[:10]
+            daily_deposits.setdefault(day, 0.0)
+            daily_deposits[day] += _f(flow.get("amount"), 0.0)
+
         eq = start
         curve = []
-        for day in sorted(daily_realized.keys()):
-            eq += daily_realized[day]
+        for day in sorted(set(daily_realized.keys()) | set(daily_deposits.keys())):
+            eq += daily_deposits.get(day, 0.0)
+            eq += daily_realized.get(day, 0.0)
             curve.append({"date": day, "equity": round(eq, 2)})
         if not curve:
             curve.append({"date": utc_now()[:10], "equity": round(total, 2)})
 
         today = utc_now()[:10]
-        today_pnl = daily_realized.get(today, 0.0)
-        ret_today = (today_pnl / total * 100) if total > 0 else 0.0
+        today_realized = daily_realized.get(today, 0.0)
+        today_deposits = daily_deposits.get(today, 0.0)
+        today_unrealized = sum(_f(pos.get("day_unrealized_pnl"), 0.0) for pos in (portfolio.get("positions") or []))
+        today_pnl = today_realized + today_unrealized
+        today_base = total - today_pnl - today_deposits
+        ret_today = (today_pnl / today_base * 100) if today_base > 0 else 0.0
         return {
             "market": market,
             "return_total_pct": round(ret_total, 2),
@@ -492,7 +534,17 @@ class FirestoreRepository:
 
         current_cash = _f(portfolio.get("cash"), 0.0)
         portfolio["cash"] = round(current_cash + deposit_amount, 2)
+        portfolio["net_deposits"] = round(_f(portfolio.get("net_deposits"), 0.0) + deposit_amount, 2)
         portfolio["updated_at"] = utc_now()
+        flow_id = uuid4().hex[:14]
+        state["cash_flows"][flow_id] = {
+            "id": flow_id,
+            "market": market,
+            "type": "deposit",
+            "amount": deposit_amount,
+            "notes": notes or "",
+            "created_at": utc_now(),
+        }
         self._save_state(uid, state)
 
         return {
