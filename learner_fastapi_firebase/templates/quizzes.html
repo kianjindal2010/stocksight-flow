@@ -7,29 +7,29 @@
     <div class="card orders-card mb-4">
         <div class="trades-header">
             <h2 class="section-title mb-1">Concept Checks</h2>
-            <p class="section-subtitle mb-0">Answer each question to test your understanding and build a steady quiz streak.</p>
+            <p class="section-subtitle mb-0">Pick a module quiz, pass its 20 questions, and it counts toward learning progress.</p>
         </div>
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-4">
                     <div class="p-3 border rounded-3 h-100">
-                        <div class="small text-muted">Quizzes Completed</div>
-                        <div class="h3 fw-bold mb-1">{{ quiz_state.completed or 0 }}</div>
-                        <div class="small text-muted">Total completed attempts</div>
+                        <div class="small text-muted">Module Progress</div>
+                        <div class="h3 fw-bold mb-1">{{ module_progress.progress_pct or 0 }}%</div>
+                        <div class="small text-muted">{{ module_progress.completed_modules or 0 }} / {{ module_progress.total_modules or 20 }} modules completed</div>
                     </div>
                 </div>
                 <div class="col-md-4">
                     <div class="p-3 border rounded-3 h-100">
-                        <div class="small text-muted">Quiz Streak</div>
-                        <div class="h3 fw-bold mb-1">{{ quiz_state.streak or streaks.quiz_streak_days or 0 }} day(s)</div>
-                        <div class="small text-muted">Consecutive days with at least one quiz</div>
+                        <div class="small text-muted">Passed Module Quizzes</div>
+                        <div class="h3 fw-bold mb-1">{{ quiz_state.passed_modules or 0 }}</div>
+                        <div class="small text-muted">Out of {{ quiz_state.total_module_quizzes or module_progress.total_modules or 20 }}</div>
                     </div>
                 </div>
                 <div class="col-md-4">
                     <div class="p-3 border rounded-3 h-100">
                         <div class="small text-muted">Last Score</div>
                         <div class="h3 fw-bold mb-1">{{ quiz_state.last_score_pct or 0 }}%</div>
-                        <div class="small text-muted">{{ quiz_state.last_correct or 0 }} / {{ quiz_state.last_total or 0 }} correct</div>
+                        <div class="small text-muted">{{ quiz_state.last_module_title or 'No module yet' }}</div>
                     </div>
                 </div>
             </div>
@@ -44,12 +44,43 @@
         </div>
     </div>
 
+    <div class="card orders-card mb-4">
+        <div class="trades-header">
+            <h2 class="section-title mb-1">Module Quizzes</h2>
+            <p class="section-subtitle mb-0">20 quizzes, one for each module. Each quiz has 20 questions.</p>
+        </div>
+        <div class="card-body">
+            <div class="row g-2">
+                {% for quiz in quiz_catalog %}
+                <div class="col-md-6 col-xl-4">
+                    <a class="d-block border rounded-3 p-3 text-decoration-none {% if quiz.is_selected %}border-primary bg-light{% endif %}" href="/quizzes?module_id={{ quiz.id }}">
+                        <div class="d-flex justify-content-between gap-2">
+                            <div>
+                                <div class="small text-muted">Module {{ quiz.index }} - {{ quiz.question_count }} questions</div>
+                                <div class="fw-semibold text-body">{{ quiz.title }}</div>
+                            </div>
+                            {% if quiz.is_quiz_passed %}
+                            <span class="badge text-bg-success align-self-start">Passed</span>
+                            {% elif quiz.is_module_completed %}
+                            <span class="badge text-bg-info align-self-start">Progress</span>
+                            {% else %}
+                            <span class="badge text-bg-secondary align-self-start">Open</span>
+                            {% endif %}
+                        </div>
+                        <div class="small text-muted mt-2">Best score: {{ quiz.best_score_pct }}% - Attempts: {{ quiz.attempts }}</div>
+                    </a>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
     {% if result %}
     <div class="alert {{ 'alert-success' if result.passed else 'alert-warning' }} mb-4">
-        <strong>Score: {{ result.score_pct }}%</strong>
+        <strong>{{ result.module_title }} score: {{ result.score_pct }}%</strong>
         ({{ result.correct }} / {{ result.total }} correct).
         {% if result.passed %}
-        Nice work. You passed this concept check.
+        Nice work. This module now counts toward learning progress.
         {% else %}
         Review the explanations below and try again.
         {% endif %}
@@ -57,6 +88,13 @@
     {% endif %}
 
     <form method="post" action="/quizzes/submit" class="d-grid gap-3">
+        <input type="hidden" name="module_id" value="{{ selected_module_id }}">
+        <div class="card orders-card">
+            <div class="trades-header">
+                <h2 class="section-title mb-1">{{ selected_quiz.title or 'Module Quiz' }}</h2>
+                <p class="section-subtitle mb-0">{{ selected_quiz.question_count or questions|length }} questions. Passing score is 70%.</p>
+            </div>
+        </div>
         {% for question in questions %}
         {% set selected_value = selected_answers.get(question.id) if selected_answers else '' %}
         <div class="card orders-card">
@@ -97,8 +135,8 @@
         {% endfor %}
 
         <div class="d-flex gap-2">
-            <button class="btn btn-primary" type="submit">Submit Quiz</button>
-            <a class="btn btn-outline-secondary" href="/quizzes">Reset</a>
+            <button class="btn btn-primary" type="submit">Submit {{ selected_quiz.title or 'Module' }} Quiz</button>
+            <a class="btn btn-outline-secondary" href="/quizzes?module_id={{ selected_module_id }}">Reset</a>
         </div>
     </form>
 
@@ -114,6 +152,7 @@
                     <thead>
                         <tr>
                             <th>Submitted</th>
+                            <th>Module</th>
                             <th>Score</th>
                             <th>Correct</th>
                         </tr>
@@ -122,6 +161,7 @@
                         {% for row in quiz_history %}
                         <tr>
                             <td>{{ row.submitted_at }}</td>
+                            <td>{{ row.module_title or 'Module Quiz' }}</td>
                             <td>{{ row.score_pct }}%</td>
                             <td>{{ row.correct }} / {{ row.total }}</td>
                         </tr>

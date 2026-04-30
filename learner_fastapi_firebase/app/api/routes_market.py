@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from ..dependencies import current_uid, get_repository
 from ..schemas.market import MarketSelectRequest
+from ..services.chat_context import build_ai_user_context
 
 
 router = APIRouter(tags=["market"])
@@ -54,6 +55,13 @@ def quick_quote(symbol: str, request: Request, uid: str = Depends(current_uid), 
             "market_mood": service.market_mood(market),
             "news": news,
             "close_prices": chart.get("close") or [],
+            "user_context": build_ai_user_context(
+                uid=uid,
+                market=market,
+                repo=repo,
+                learning_engine=request.app.state.learning_engine,
+                market_data=service,
+            ),
         },
     )
     return {"market": market, "quote": quote, "benchmark": benchmark, "ai_recommendation": ai_recommendation}

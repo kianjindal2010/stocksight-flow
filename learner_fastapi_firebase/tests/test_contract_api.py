@@ -299,6 +299,56 @@ def test_dashboard_refreshes_position_prices_from_quote_feed(client, auth_header
     assert "$10100.00" in response.text
 
 
+def test_dashboard_performer_cards_use_daily_change(client, auth_headers):
+    repo = client.app.state.repo
+    for symbol, avg_price in [
+        ("WIN", 100.0),
+        ("LOSS", 100.0),
+        ("UPLOSS", 120.0),
+        ("DOWNGAIN", 100.0),
+    ]:
+        repo.apply_trade(
+            uid="test-user",
+            market="US",
+            side="buy",
+            symbol=symbol,
+            quantity=10,
+            price=avg_price,
+            order_type="market",
+        )
+
+    quotes = {
+        "WIN": {"price": 130.0, "change_pct": 3.0},
+        "LOSS": {"price": 90.0, "change_pct": -2.0},
+        "UPLOSS": {"price": 95.0, "change_pct": 1.0},
+        "DOWNGAIN": {"price": 110.0, "change_pct": -1.0},
+    }
+
+    def quote(symbol, market):
+        row = quotes[str(symbol).upper()]
+        return {
+            "symbol": symbol,
+            "name": symbol,
+            "price": row["price"],
+            "change_pct": row["change_pct"],
+            "currency": "USD",
+        }
+
+    client.app.state.market_data.quote = quote  # type: ignore[assignment]
+
+    response = client.get("/", headers=auth_headers)
+    assert response.status_code == 200
+    top_section = response.text.split("Top Performers", 1)[1].split("Worst Performers", 1)[0]
+    worst_section = response.text.split("Worst Performers", 1)[1].split("AI Coach", 1)[0]
+
+    assert "+3.00%" in top_section
+    assert "+1.00%" in top_section
+    assert "-1.00%" not in top_section
+    assert "-2.00%" in worst_section
+    assert "-1.00%" in worst_section
+    assert "+1.00%" not in worst_section
+
+
 def test_modules_page_completion_updates_learning_progress(client, auth_headers):
     page = client.get("/modules", headers=auth_headers)
     assert page.status_code == 200
@@ -320,9 +370,49 @@ def test_modules_page_completion_updates_learning_progress(client, auth_headers)
     assert "1 / 20 modules completed" in learning_page.text
 
 
+def test_each_module_has_quiz_and_passing_updates_learning_progress(client, auth_headers):
+    from learner_fastapi_firebase.app.services import quiz_bank
+
+    curriculum = client.app.state.learning_engine.curriculum()
+    for module in curriculum:
+        questions = quiz_bank.quiz_question_bank(curriculum, module["id"])
+        assert len(questions) == 20
+
+    page = client.get("/quizzes?module_id=market_basics", headers=auth_headers)
+    assert page.status_code == 200
+    assert "Market Basics" in page.text
+    assert page.text.count('name="answer_market_basics_q') == 80
+
+    questions = quiz_bank.quiz_question_bank(curriculum, "market_basics")
+    data = {"module_id": "market_basics"}
+    data.update({f"answer_{question['id']}": str(question["answer_index"]) for question in questions})
+    submit = client.post("/quizzes/submit", headers=auth_headers, data=data)
+    assert submit.status_code == 200
+    assert "Market Basics score: 100%" in submit.text
+
+    progress = client.app.state.repo.get_learning_doc("test-user", "progress", default={})
+    assert progress.get("completed_modules") == 1
+    assert "market_basics" in (progress.get("completed_module_ids") or [])
+
+    quizzes = client.app.state.repo.get_learning_doc("test-user", "quizzes", default={})
+    assert quizzes.get("passed_modules") == 1
+    assert "market_basics" in (quizzes.get("completed_quiz_module_ids") or [])
+
+
 def test_protected_routes_require_auth(client):
     response = client.get("/api/portfolio")
     assert response.status_code == 401
+
+
+def test_public_preview_dashboard_without_login(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "My Portfolio" in response.text
+    assert "Preview Mode" in response.text
+
+    summary = client.get("/api/dashboard/summary")
+    assert summary.status_code == 200
+    assert summary.json()["portfolio"]["positions"]
 
 
 def test_absent_pro_admin_routes(client):

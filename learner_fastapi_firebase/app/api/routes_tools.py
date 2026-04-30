@@ -4,9 +4,20 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from ..dependencies import current_uid, get_repository
 from ..schemas.learning import ScenarioRequest, SipRequest
+from ..services.chat_context import build_ai_user_context
 
 
 router = APIRouter(prefix="/api/tools", tags=["tools"])
+
+
+def _advisor_user_context(request: Request, uid: str, market: str, repo) -> dict:
+    return build_ai_user_context(
+        uid=uid,
+        market=market,
+        repo=repo,
+        learning_engine=request.app.state.learning_engine,
+        market_data=request.app.state.market_data,
+    )
 
 
 @router.get("/sip-calculator")
@@ -63,7 +74,7 @@ def scenario_simulator(
         uid=uid,
         market=market,
         topic="scenario",
-        payload=result,
+        payload={**result, "user_context": _advisor_user_context(request, uid, market, repo)},
     )
     return result
 
@@ -83,7 +94,12 @@ def scenario_simulator_post(payload: ScenarioRequest, request: Request, uid: str
 def risk_lite(request: Request, symbol: str = Query("AAPL"), uid: str = Depends(current_uid), repo=Depends(get_repository)):
     market = repo.get_selected_market(uid)
     risk = request.app.state.market_data.risk_lite(symbol, market)
-    risk["ai_tip"] = request.app.state.ai_advisor.tool_tip(uid=uid, market=market, topic="risk", payload=risk)
+    risk["ai_tip"] = request.app.state.ai_advisor.tool_tip(
+        uid=uid,
+        market=market,
+        topic="risk",
+        payload={**risk, "symbol": symbol, "user_context": _advisor_user_context(request, uid, market, repo)},
+    )
     return risk
 
 
@@ -95,7 +111,7 @@ def forecast_lite(request: Request, symbol: str = Query("AAPL"), uid: str = Depe
         uid=uid,
         market=market,
         symbol=symbol,
-        payload=forecast,
+        payload={**forecast, "user_context": _advisor_user_context(request, uid, market, repo)},
     )
     return forecast
 
@@ -114,7 +130,11 @@ def screener(
         uid=uid,
         market=market,
         topic=f"screener-{preset}",
-        payload={"total_results": len(rows), "top_rows": rows[:5]},
+        payload={
+            "total_results": len(rows),
+            "top_rows": rows[:5],
+            "user_context": _advisor_user_context(request, uid, market, repo),
+        },
     )
     return out
 
@@ -127,6 +147,6 @@ def market_mood(request: Request, uid: str = Depends(current_uid), repo=Depends(
         uid=uid,
         market=market,
         topic="market-mood",
-        payload=mood,
+        payload={**mood, "user_context": _advisor_user_context(request, uid, market, repo)},
     )
     return mood

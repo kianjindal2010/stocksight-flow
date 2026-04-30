@@ -20,9 +20,10 @@ from .firebase import get_firestore_client, initialize_firebase, verify_id_token
 from .services.emailer import EmailService
 from .services.firestore_repo import FirestoreRepository
 from .services.ai_advisor import AIAdvisorService
-from .services.chat_context import build_ai_chat_context
+from .services.chat_context import build_ai_chat_context, build_ai_user_context
 from .services.learning_engine import LearningEngine
 from .services.market_data import MarketDataService
+from .services import quiz_bank
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,8 @@ logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).resolve().parent.parent
 TEMPLATES_DIR = BASE_DIR / "templates"
 STATIC_DIR = BASE_DIR / "static"
+PREVIEW_UID = "public_preview_user"
+PREVIEW_EMAIL = "preview@stocksight.local"
 
 
 def _extract_token(request: Request) -> str | None:
@@ -107,19 +110,16 @@ def _goal_deadline_status(goal: dict[str, Any]) -> dict[str, Any]:
 
 
 def _quiz_default_doc() -> dict[str, Any]:
-    return {
-        "streak": 0,
-        "completed": 0,
-        "history": [],
-        "milestones": [
-            "Finish first concept check",
-            "Finish 5 quizzes",
-            "Finish 20 trade-based questions",
-        ],
-    }
+    return quiz_bank.quiz_default_doc()
 
 
-def _quiz_question_bank() -> list[dict[str, Any]]:
+def _quiz_question_bank(
+    curriculum: list[dict[str, Any]] | None = None,
+    module_id: str | None = None,
+) -> list[dict[str, Any]]:
+    generated = quiz_bank.quiz_question_bank(curriculum or [], module_id=module_id)
+    if generated:
+        return generated
     return [
         {
             "id": "q1",
@@ -368,6 +368,58 @@ def create_app() -> FastAPI:
         uid = str(user.get("uid") or "")
         return uid or None
 
+    def _ensure_preview_user() -> str:
+        app.state.repo.ensure_user(PREVIEW_UID, email=PREVIEW_EMAIL, display_name="Preview Guest")
+        app.state.repo.set_selected_market(PREVIEW_UID, "US")
+        portfolio = app.state.repo.get_portfolio(PREVIEW_UID, "US")
+        if not portfolio.get("positions"):
+            demo_trades = [
+                ("AAPL", 8, 178.0, "AI platform leader demo holding"),
+                ("MSFT", 4, 410.0, "Quality software cash-flow demo holding"),
+                ("NVDA", 3, 830.0, "High-volatility semiconductor demo holding"),
+            ]
+            for symbol, quantity, price, thesis in demo_trades:
+                result = app.state.repo.apply_trade(
+                    uid=PREVIEW_UID,
+                    market="US",
+                    side="buy",
+                    symbol=symbol,
+                    quantity=quantity,
+                    price=price,
+                    order_type="market",
+                    notes=thesis,
+                )
+                trade_id = str((result.get("trade") or {}).get("id") or "")
+                if trade_id:
+                    app.state.repo.upsert_trade_journal(
+                        PREVIEW_UID,
+                        trade_id,
+                        {
+                            "thesis": thesis,
+                            "reason_for_entry": "Demo preview trade showing how the journal informs AI coaching.",
+                            "lessons_learned": "Keep position size controlled and write the risk plan before buying.",
+                            "outcome_review": "Preview data only.",
+                        },
+                    )
+            app.state.repo.deposit_cash(PREVIEW_UID, "US", 5000.0, notes="Demo preview top-up")
+            app.state.repo.set_learning_doc(
+                PREVIEW_UID,
+                "portfolio_goal",
+                {"target_value": 30000.0, "target_return_pct": 12.0, "target_deadline": "2026-12-31"},
+                merge=True,
+            )
+        return PREVIEW_UID
+
+    def _preview_uid(request: Request) -> str | None:
+        if _uid(request):
+            return None
+        if request.method not in {"GET", "HEAD"}:
+            return None
+        uid = _ensure_preview_user()
+        request.state.preview_mode = True
+        request.state.current_user = {"uid": uid, "email": PREVIEW_EMAIL, "name": "Preview Guest", "preview": True}
+        return uid
+
     def _redirect(path: str, message: str = "", error: str = "") -> RedirectResponse:
         params: dict[str, str] = {}
         if message:
@@ -385,6 +437,7 @@ def create_app() -> FastAPI:
             "request": request,
             "current_user": user,
             "authenticated": bool(user),
+            "preview_mode": bool(getattr(request.state, "preview_mode", False)),
             "app_name": "StockSight Learner",
             "flash": request.query_params.get("message", ""),
             "error": request.query_params.get("error", ""),
@@ -418,6 +471,9 @@ def create_app() -> FastAPI:
     def _auth_or_redirect(request: Request) -> str | RedirectResponse:
         uid = _uid(request)
         if not uid:
+            preview_uid = _preview_uid(request)
+            if preview_uid:
+                return preview_uid
             return RedirectResponse(url="/login", status_code=303)
         return uid
 
@@ -437,6 +493,39 @@ def create_app() -> FastAPI:
                 except Exception as exc:
                     logger.exception("parallel_task_failed task=%s error=%s", name, exc)
         return results
+
+    def _dashboard_position_rows(
+        positions: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+        for pos in positions:
+            avg = _f(pos.get("avg_price"))
+            last = _f(pos.get("last_price"))
+            total_change_pct = round(((last - avg) / avg * 100) if avg else 0.0, 2)
+            day_change_pct = round(_f(pos.get("day_change_pct"), total_change_pct), 2)
+            pos["total_change_pct"] = total_change_pct
+            pos["day_change_pct"] = day_change_pct
+            pos["change_pct"] = day_change_pct
+            pos["market_value"] = round(_f(pos.get("market_value")), 2)
+            pos["unrealized_pnl"] = round(_f(pos.get("unrealized_pnl")), 2)
+        top_positions = sorted(
+            [row for row in positions if _f(row.get("day_change_pct")) > 0],
+            key=lambda row: _f(row.get("day_change_pct")),
+            reverse=True,
+        )[:4]
+        worst_positions = sorted(
+            [row for row in positions if _f(row.get("day_change_pct")) < 0],
+            key=lambda row: _f(row.get("day_change_pct")),
+        )[:4]
+        return positions, top_positions, worst_positions
+
+    def _advisor_user_context(uid: str, market: str) -> dict[str, Any]:
+        return build_ai_user_context(
+            uid=uid,
+            market=market,
+            repo=app.state.repo,
+            learning_engine=app.state.learning_engine,
+            market_data=app.state.market_data,
+        )
 
     def _coach_loading_placeholder() -> dict[str, Any]:
         return {
@@ -603,19 +692,44 @@ def create_app() -> FastAPI:
     def _quizzes_page_payload(
         uid: str,
         *,
+        selected_module_id: str | None = None,
         result: dict[str, Any] | None = None,
         selected_answers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        quiz_doc = app.state.repo.get_learning_doc(uid, "quizzes", default=_quiz_default_doc())
+        quiz_doc = {**_quiz_default_doc(), **app.state.repo.get_learning_doc(uid, "quizzes", default=_quiz_default_doc())}
         streaks = app.state.repo.get_learning_doc(
             uid,
             "streaks",
             default={"learning_streak_days": 0, "quiz_streak_days": 0, "challenge_streak_days": 0},
         )
+        progress_state = _module_progress_state(uid)
+        curriculum = progress_state["curriculum"]
+        selected_id = quiz_bank.select_module_id(
+            curriculum,
+            selected_module_id,
+            progress_state["completed_ids"],
+        )
+        catalog = quiz_bank.quiz_catalog(
+            curriculum,
+            quiz_doc,
+            progress_state["completed_ids"],
+            selected_id,
+        )
+        selected_quiz = next((row for row in catalog if row["id"] == selected_id), catalog[0] if catalog else {})
         history_raw = quiz_doc.get("history") if isinstance(quiz_doc.get("history"), list) else []
         history = [row for row in history_raw if isinstance(row, dict)]
+        total_modules = max(1, progress_state["total_modules"])
+        completed_modules = progress_state["completed_count"]
         return {
-            "questions": _quiz_question_bank(),
+            "questions": _quiz_question_bank(curriculum, selected_id),
+            "quiz_catalog": catalog,
+            "selected_quiz": selected_quiz,
+            "selected_module_id": selected_id,
+            "module_progress": {
+                "completed_modules": completed_modules,
+                "total_modules": total_modules,
+                "progress_pct": int(round((completed_modules / total_modules) * 100)),
+            },
             "quiz_state": quiz_doc,
             "streaks": streaks,
             "quiz_history": list(reversed(history[-5:])),
@@ -669,6 +783,33 @@ def create_app() -> FastAPI:
             if module_id and module_id not in completed_set:
                 return f"Complete module {idx}: {module.get('title') or 'Next Module'}."
         return "Great momentum. Keep reinforcing with concept checks and trade journaling."
+
+    def _save_module_progress(uid: str, module_id: str, *, complete: bool, source: str) -> dict[str, Any] | None:
+        state = _module_progress_state(uid)
+        curriculum = state["curriculum"]
+        module_ids = state["module_ids"]
+        if module_id not in set(module_ids):
+            return None
+
+        completed_set = set(state["completed_ids"])
+        if complete:
+            completed_set.add(module_id)
+        else:
+            completed_set.discard(module_id)
+
+        ordered_completed = [row_id for row_id in module_ids if row_id in completed_set]
+        payload: dict[str, Any] = {
+            "completed_module_ids": ordered_completed,
+            "completed_modules": len(ordered_completed),
+            "total_modules": len(module_ids) or 20,
+            "next_step": _next_module_step(curriculum, completed_set),
+            "last_progress_source": source,
+            "updated_at": _utc_now_iso(),
+        }
+        if complete:
+            payload["last_completed_module_id"] = module_id
+            payload["last_completed_at"] = _utc_now_iso()
+        return app.state.repo.set_learning_doc(uid, "progress", payload, merge=True)
 
     def _modules_page_payload(uid: str) -> dict[str, Any]:
         state = _module_progress_state(uid)
@@ -732,14 +873,7 @@ def create_app() -> FastAPI:
         mood = parallel_rows.get("mood") or app.state.market_data.market_mood(market)
         portfolio = app.state.repo.get_portfolio(uid, market)
         positions = portfolio.get("positions", [])
-        for pos in positions:
-            avg = _f(pos.get("avg_price"))
-            last = _f(pos.get("last_price"))
-            pos["change_pct"] = round(((last - avg) / avg * 100), 2) if avg else 0.0
-            pos["market_value"] = round(_f(pos.get("market_value")), 2)
-            pos["unrealized_pnl"] = round(_f(pos.get("unrealized_pnl")), 2)
-        top_positions = sorted(positions, key=lambda row: _f(row.get("change_pct")), reverse=True)[:4]
-        worst_positions = sorted(positions, key=lambda row: _f(row.get("change_pct")))[:4]
+        positions, top_positions, worst_positions = _dashboard_position_rows(positions)
         currency_code = str(benchmark.get("currency") or "USD")
         goal = app.state.repo.get_learning_doc(uid, "portfolio_goal", default={})
         goal_deadline = _goal_deadline_status(goal)
@@ -824,7 +958,7 @@ def create_app() -> FastAPI:
 
     @app.get("/api/ai/dashboard-brief")
     async def api_ai_dashboard_brief(request: Request):
-        uid = _uid(request)
+        uid = _uid(request) or _preview_uid(request)
         if not uid:
             raise HTTPException(status_code=401, detail="Not authenticated")
         market = app.state.repo.get_selected_market(uid)
@@ -847,18 +981,7 @@ def create_app() -> FastAPI:
         mood = parallel_rows.get("mood") or app.state.market_data.market_mood(market)
         portfolio = app.state.repo.get_portfolio(uid, market)
         positions = portfolio.get("positions", [])
-        for pos in positions:
-            avg = _f(pos.get("avg_price"))
-            last = _f(pos.get("last_price"))
-            total_change_pct = round(((last - avg) / avg * 100) if avg else 0.0, 2)
-            day_change_pct = round(_f(pos.get("day_change_pct"), total_change_pct), 2)
-            pos["total_change_pct"] = total_change_pct
-            pos["day_change_pct"] = day_change_pct
-            pos["change_pct"] = day_change_pct
-            pos["market_value"] = round(_f(pos.get("market_value")), 2)
-            pos["unrealized_pnl"] = round(_f(pos.get("unrealized_pnl")), 2)
-        top_positions = sorted(positions, key=lambda row: _f(row.get("change_pct")), reverse=True)[:4]
-        worst_positions = sorted(positions, key=lambda row: _f(row.get("change_pct")))[:4]
+        positions, top_positions, worst_positions = _dashboard_position_rows(positions)
         return app.state.ai_advisor.dashboard_brief(
             uid=uid,
             market=market,
@@ -873,12 +996,13 @@ def create_app() -> FastAPI:
                 "positions": positions,
                 "top_positions": top_positions,
                 "worst_positions": worst_positions,
+                "user_context": _advisor_user_context(uid, market),
             },
         )
 
     @app.get("/api/ai/quote-signal")
     async def api_ai_quote_signal(request: Request):
-        uid = _uid(request)
+        uid = _uid(request) or _preview_uid(request)
         if not uid:
             raise HTTPException(status_code=401, detail="Not authenticated")
         raw_symbol = str(request.query_params.get("symbol") or "").strip()
@@ -914,12 +1038,13 @@ def create_app() -> FastAPI:
                 "market_mood": market_mood,
                 "news": news,
                 "close_prices": quote_chart.get("close") or [],
+                "user_context": _advisor_user_context(uid, market),
             },
         )
 
     @app.get("/api/dashboard/summary")
     async def api_dashboard_summary(request: Request):
-        uid = _uid(request)
+        uid = _uid(request) or _preview_uid(request)
         if not uid:
             raise HTTPException(status_code=401, detail="Not authenticated")
         market = app.state.repo.get_selected_market(uid)
@@ -938,18 +1063,7 @@ def create_app() -> FastAPI:
         news = parallel_rows.get("news") or []
         portfolio = app.state.repo.get_portfolio(uid, market)
         positions = portfolio.get("positions", [])
-        for pos in positions:
-            avg = _f(pos.get("avg_price"))
-            last = _f(pos.get("last_price"))
-            total_change_pct = round(((last - avg) / avg * 100) if avg else 0.0, 2)
-            day_change_pct = round(_f(pos.get("day_change_pct"), total_change_pct), 2)
-            pos["total_change_pct"] = total_change_pct
-            pos["day_change_pct"] = day_change_pct
-            pos["change_pct"] = day_change_pct
-            pos["market_value"] = round(_f(pos.get("market_value")), 2)
-            pos["unrealized_pnl"] = round(_f(pos.get("unrealized_pnl")), 2)
-        top_positions = sorted(positions, key=lambda row: _f(row.get("change_pct")), reverse=True)[:4]
-        worst_positions = sorted(positions, key=lambda row: _f(row.get("change_pct")))[:4]
+        positions, top_positions, worst_positions = _dashboard_position_rows(positions)
         currency_code = str(benchmark.get("currency") or "USD")
         goal = app.state.repo.get_learning_doc(uid, "portfolio_goal", default={})
         goal_deadline = _goal_deadline_status(goal)
@@ -1266,6 +1380,7 @@ def create_app() -> FastAPI:
         base_explanation = app.state.learning_engine.explain_portfolio(uid, market)
         move_why = app.state.learning_engine.portfolio_move_why(uid, market)
         portfolio = app.state.repo.get_portfolio(uid, market)
+        user_context = _advisor_user_context(uid, market)
         explanation = app.state.ai_advisor.portfolio_explainer(
             uid=uid,
             market=market,
@@ -1274,6 +1389,7 @@ def create_app() -> FastAPI:
                 "portfolio": portfolio,
                 "health": health,
                 "move_why": move_why,
+                "user_context": user_context,
             },
         )
         return templates.TemplateResponse(
@@ -1379,7 +1495,7 @@ def create_app() -> FastAPI:
             uid=uid,
             market=market,
             topic="weekly-summary",
-            payload=summary,
+            payload={**summary, "user_context": _advisor_user_context(uid, market)},
         )
         return templates.TemplateResponse(
             request,
@@ -1476,35 +1592,15 @@ def create_app() -> FastAPI:
         action = str(form.get("action") or "complete").strip().lower()
 
         state = _module_progress_state(uid)
-        curriculum = state["curriculum"]
-        module_ids = state["module_ids"]
-        completed_ids = list(state["completed_ids"])
-        completed_set = set(completed_ids)
-
-        if module_id not in set(module_ids):
+        if module_id not in set(state["module_ids"]):
             return _redirect("/modules", error="Module not found.")
 
         if action == "undo":
-            completed_set.discard(module_id)
+            _save_module_progress(uid, module_id, complete=False, source="manual")
             action_message = "Module marked as not completed."
         else:
-            completed_set.add(module_id)
+            _save_module_progress(uid, module_id, complete=True, source="manual")
             action_message = "Module marked as completed."
-
-        ordered_completed = [row_id for row_id in module_ids if row_id in completed_set]
-        next_step = _next_module_step(curriculum, completed_set)
-        app.state.repo.set_learning_doc(
-            uid,
-            "progress",
-            {
-                "completed_module_ids": ordered_completed,
-                "completed_modules": len(ordered_completed),
-                "total_modules": len(module_ids) or 20,
-                "next_step": next_step,
-                "updated_at": _utc_now_iso(),
-            },
-            merge=True,
-        )
         return _redirect("/modules", message=action_message)
 
     @app.get("/quizzes", response_class=HTMLResponse)
@@ -1512,10 +1608,11 @@ def create_app() -> FastAPI:
         uid = _auth_or_redirect(request)
         if isinstance(uid, RedirectResponse):
             return uid
+        selected_module_id = str(request.query_params.get("module_id") or "").strip()
         return templates.TemplateResponse(
             request,
             "quizzes.html",
-            _context(request, _quizzes_page_payload(uid)),
+            _context(request, _quizzes_page_payload(uid, selected_module_id=selected_module_id)),
         )
 
     @app.post("/quizzes/submit", response_class=HTMLResponse)
@@ -1524,19 +1621,38 @@ def create_app() -> FastAPI:
         if isinstance(uid, RedirectResponse):
             return uid
 
-        questions = _quiz_question_bank()
         form = await request.form()
+        requested_module_id = str(form.get("module_id") or "").strip()
+        progress_state = _module_progress_state(uid)
+        curriculum = progress_state["curriculum"]
+        selected_module_id = quiz_bank.select_module_id(
+            curriculum,
+            requested_module_id,
+            progress_state["completed_ids"],
+        )
+        if not selected_module_id:
+            return _redirect("/quizzes", error="No quiz module is available.")
+
+        questions = _quiz_question_bank(curriculum, selected_module_id)
+        selected_module = next(
+            (row for row in curriculum if str(row.get("id") or "") == selected_module_id),
+            {},
+        )
+        selected_module_title = str(selected_module.get("title") or "Module Quiz")
         selected_answers: dict[str, str] = {}
         for question in questions:
             qid = str(question.get("id") or "")
             selected_answers[qid] = str(form.get(f"answer_{qid}", "")).strip()
 
         result = _quiz_report(questions, selected_answers)
+        result["module_id"] = selected_module_id
+        result["module_title"] = selected_module_title
+        result["progress_updated"] = False
         now = datetime.now(timezone.utc)
         today_iso = now.date().isoformat()
         yesterday_iso = (now.date() - timedelta(days=1)).isoformat()
 
-        current = app.state.repo.get_learning_doc(uid, "quizzes", default=_quiz_default_doc())
+        current = {**_quiz_default_doc(), **app.state.repo.get_learning_doc(uid, "quizzes", default=_quiz_default_doc())}
         previous_streak = _i(current.get("streak"), 0)
         previous_completed = _i(current.get("completed"), 0)
         last_completed_on = str(current.get("last_completed_on") or "").strip()
@@ -1553,23 +1669,61 @@ def create_app() -> FastAPI:
         history.append(
             {
                 "submitted_at": now.isoformat(),
+                "module_id": selected_module_id,
+                "module_title": selected_module_title,
                 "score_pct": result["score_pct"],
                 "correct": result["correct"],
                 "total": result["total"],
+                "passed": result["passed"],
             }
         )
         milestones = current.get("milestones")
-        if not isinstance(milestones, list):
+        if not isinstance(milestones, list) or "Finish 20 trade-based questions" in milestones:
             milestones = _quiz_default_doc()["milestones"]
+
+        module_scores = current.get("module_scores") if isinstance(current.get("module_scores"), dict) else {}
+        existing_score = module_scores.get(selected_module_id) if isinstance(module_scores.get(selected_module_id), dict) else {}
+        best_score = max(_i(existing_score.get("best_score_pct"), 0), _i(result["score_pct"], 0))
+        module_scores[selected_module_id] = {
+            "module_id": selected_module_id,
+            "module_title": selected_module_title,
+            "attempts": _i(existing_score.get("attempts"), 0) + 1,
+            "best_score_pct": best_score,
+            "last_score_pct": result["score_pct"],
+            "last_correct": result["correct"],
+            "last_total": result["total"],
+            "passed": bool(existing_score.get("passed")) or bool(result["passed"]),
+            "last_submitted_at": now.isoformat(),
+        }
+
+        completed_quiz_raw = current.get("completed_quiz_module_ids")
+        completed_quiz_ids = [
+            str(module_id).strip()
+            for module_id in (completed_quiz_raw if isinstance(completed_quiz_raw, list) else [])
+            if str(module_id).strip()
+        ]
+        if result["passed"] and selected_module_id not in completed_quiz_ids:
+            completed_quiz_ids.append(selected_module_id)
+
+        if result["passed"]:
+            progress_doc = _save_module_progress(uid, selected_module_id, complete=True, source="quiz")
+            result["progress_updated"] = progress_doc is not None
 
         app.state.repo.set_learning_doc(
             uid,
             "quizzes",
             {
                 "completed": previous_completed + 1,
+                "completed_quiz_module_ids": completed_quiz_ids,
+                "passed_modules": len(completed_quiz_ids),
+                "total_module_quizzes": len(curriculum) or 20,
+                "module_scores": module_scores,
                 "streak": next_streak,
                 "last_completed_on": today_iso,
                 "last_submitted_at": now.isoformat(),
+                "last_module_id": selected_module_id,
+                "last_module_title": selected_module_title,
+                "last_passed": result["passed"],
                 "last_score_pct": result["score_pct"],
                 "last_correct": result["correct"],
                 "last_total": result["total"],
@@ -1583,7 +1737,15 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(
             request,
             "quizzes.html",
-            _context(request, _quizzes_page_payload(uid, result=result, selected_answers=selected_answers)),
+            _context(
+                request,
+                _quizzes_page_payload(
+                    uid,
+                    selected_module_id=selected_module_id,
+                    result=result,
+                    selected_answers=selected_answers,
+                ),
+            ),
         )
 
     @app.get("/leaderboard", response_class=HTMLResponse)
@@ -1614,7 +1776,12 @@ def create_app() -> FastAPI:
             portfolio = app.state.repo.get_portfolio(uid, market)
             symbol = (portfolio.get("positions") or [{"symbol": "AAPL"}])[0]["symbol"]
         risk = app.state.market_data.risk_lite(symbol, market)
-        risk_tip = app.state.ai_advisor.tool_tip(uid=uid, market=market, topic="risk", payload=risk)
+        risk_tip = app.state.ai_advisor.tool_tip(
+            uid=uid,
+            market=market,
+            topic="risk",
+            payload={**risk, "symbol": symbol, "user_context": _advisor_user_context(uid, market)},
+        )
         return templates.TemplateResponse(
             request,
             "risk_lab.html",
@@ -1630,10 +1797,11 @@ def create_app() -> FastAPI:
         symbol = (request.query_params.get("symbol") or "AAPL").strip().upper()
         forecast = app.state.market_data.forecast_lite(symbol, market)
         portfolio = app.state.repo.get_portfolio(uid, market)
+        user_context = _advisor_user_context(uid, market)
         portfolio_explainer = app.state.ai_advisor.portfolio_explainer(
             uid=uid,
             market=market,
-            payload={"portfolio": portfolio},
+            payload={"portfolio": portfolio, "focus_symbol": symbol, "user_context": user_context},
         )
         forecast_ai = app.state.ai_advisor.forecast_explainer(
             uid=uid,
@@ -1644,6 +1812,7 @@ def create_app() -> FastAPI:
                 "portfolio": portfolio,
                 "market_mood": app.state.market_data.market_mood(market),
                 "headlines": app.state.market_data.stock_news(symbol, market, limit=3),
+                "user_context": user_context,
             },
         )
         return templates.TemplateResponse(
@@ -1727,7 +1896,12 @@ def create_app() -> FastAPI:
             return uid
         market = app.state.repo.get_selected_market(uid)
         mood = app.state.market_data.market_mood(market)
-        mood_tip = app.state.ai_advisor.tool_tip(uid=uid, market=market, topic="market-mood", payload=mood)
+        mood_tip = app.state.ai_advisor.tool_tip(
+            uid=uid,
+            market=market,
+            topic="market-mood",
+            payload={**mood, "user_context": _advisor_user_context(uid, market)},
+        )
         return templates.TemplateResponse(
             request,
             "market_mood.html",
@@ -1756,6 +1930,7 @@ def create_app() -> FastAPI:
                 "delta_pct": round(delta_pct, 2),
                 "market_move_pct": market_move_pct,
                 "add_cash": add_cash,
+                "user_context": _advisor_user_context(uid, market),
             },
         )
         return templates.TemplateResponse(

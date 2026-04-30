@@ -74,7 +74,11 @@
                     <div class="sidebar-section">
                         <p class="sidebar-label">Support</p>
                         <a class="sidebar-link" href="/instructions">Help Center</a>
+                        {% if preview_mode %}
+                        <a class="sidebar-link" href="/login">Log In</a>
+                        {% else %}
                         <a class="sidebar-link" href="#" id="logout-link">Log Out</a>
+                        {% endif %}
                     </div>
                 </div>
             </aside>
@@ -89,7 +93,12 @@
                         </div>
                     </div>
                     <div class="app-header-right">
+                        {% if preview_mode %}
+                        <span class="chip chip-flow">Preview Mode</span>
+                        <a class="header-link" href="/login">Log in</a>
+                        {% else %}
                         <span class="chip chip-flow">StockSight Flow</span>
+                        {% endif %}
                         <a class="header-link" href="/instructions">Account</a>
                         <a class="header-link" href="/instructions">Layout</a>
                     </div>

@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..dependencies import current_uid, get_repository
 from ..schemas.learning import ChecklistRequest
-from ..services.chat_context import build_ai_chat_context
+from ..services.chat_context import build_ai_chat_context, build_ai_user_context
+from ..services import quiz_bank
 
 
 router = APIRouter(prefix="/api/learning", tags=["learning"])
@@ -44,6 +45,16 @@ def _chat_rows(raw_messages) -> list[dict]:
     return rows
 
 
+def _advisor_user_context(request: Request, uid: str, market: str, repo) -> dict:
+    return build_ai_user_context(
+        uid=uid,
+        market=market,
+        repo=repo,
+        learning_engine=request.app.state.learning_engine,
+        market_data=request.app.state.market_data,
+    )
+
+
 @router.get("/dashboard")
 def learning_dashboard(request: Request, uid: str = Depends(current_uid), repo=Depends(get_repository)):
     market = repo.get_selected_market(uid)
@@ -68,7 +79,7 @@ def weekly_summary(request: Request, uid: str = Depends(current_uid), repo=Depen
         uid=uid,
         market=market,
         topic="weekly-summary",
-        payload=summary,
+        payload={**summary, "user_context": _advisor_user_context(request, uid, market, repo)},
     )
     return summary
 
@@ -87,7 +98,11 @@ def explain_portfolio(request: Request, uid: str = Depends(current_uid), repo=De
     return request.app.state.ai_advisor.portfolio_explainer(
         uid=uid,
         market=market,
-        payload={"plain_english": base.get("plain_english"), "portfolio": portfolio},
+        payload={
+            "plain_english": base.get("plain_english"),
+            "portfolio": portfolio,
+            "user_context": _advisor_user_context(request, uid, market, repo),
+        },
     )
 
 
@@ -99,7 +114,7 @@ def portfolio_move_why(request: Request, uid: str = Depends(current_uid), repo=D
         uid=uid,
         market=market,
         topic="portfolio-move",
-        payload=move,
+        payload={**move, "user_context": _advisor_user_context(request, uid, market, repo)},
     )
     return move
 
@@ -147,6 +162,7 @@ def learning_ai_coach(request: Request, uid: str = Depends(current_uid), repo=De
             "positions": positions,
             "top_positions": top_positions,
             "worst_positions": worst_positions,
+            "user_context": _advisor_user_context(request, uid, market, repo),
         },
     )
 
@@ -239,16 +255,34 @@ def learning_center():
 
 
 @router.get("/quizzes")
-def quizzes(uid: str = Depends(current_uid), repo=Depends(get_repository)):
-    return repo.get_learning_doc(
+def quizzes(request: Request, uid: str = Depends(current_uid), repo=Depends(get_repository)):
+    state = {
+        **quiz_bank.quiz_default_doc(),
+        **repo.get_learning_doc(
+            uid,
+            "quizzes",
+            default=quiz_bank.quiz_default_doc(),
+        ),
+    }
+    curriculum = request.app.state.learning_engine.curriculum()
+    progress = repo.get_learning_doc(
         uid,
-        "quizzes",
+        "progress",
         default={
-            "streak": 0,
-            "completed": 0,
-            "milestones": ["Finish first concept check", "Finish 5 quizzes", "Finish 20 trade-based questions"],
+            "completed_modules": 0,
+            "total_modules": len(curriculum) or 20,
+            "completed_module_ids": [],
         },
     )
+    completed_module_ids = progress.get("completed_module_ids") if isinstance(progress.get("completed_module_ids"), list) else []
+    selected_module_id = quiz_bank.select_module_id(curriculum, completed_module_ids=completed_module_ids)
+    return {
+        **state,
+        "catalog": quiz_bank.quiz_catalog(curriculum, state, completed_module_ids, selected_module_id),
+        "selected_module_id": selected_module_id,
+        "questions_per_quiz": 20,
+        "total_module_quizzes": len(curriculum) or 20,
+    }
 
 
 @router.get("/challenges")

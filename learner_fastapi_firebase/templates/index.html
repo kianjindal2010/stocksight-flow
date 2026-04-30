@@ -170,7 +170,7 @@
                     <div class="card-metric-header-title">Top Performers</div>
                     <div class="card-metric-subtitle">Best gainers in your portfolio today</div>
                 </div>
-                <div class="list-group list-group-flush">
+                <div id="topPerformersList" class="list-group list-group-flush">
                     {% for row in top_positions %}
                     <div class="list-group-item d-flex justify-content-between metric-list-item">
                         <span class="metric-list-symbol">{{ row.symbol }}</span>
@@ -178,7 +178,7 @@
                     </div>
                     {% endfor %}
                     {% if not top_positions %}
-                    <div class="list-group-item text-muted metric-list-item">No positions yet.</div>
+                    <div class="list-group-item text-muted metric-list-item">{{ "No gainers today." if positions else "No positions yet." }}</div>
                     {% endif %}
                 </div>
             </div>
@@ -188,7 +188,7 @@
                     <div class="card-metric-header-title">Worst Performers</div>
                     <div class="card-metric-subtitle">Biggest decliners in your portfolio today</div>
                 </div>
-                <div class="list-group list-group-flush">
+                <div id="worstPerformersList" class="list-group list-group-flush">
                     {% for row in worst_positions %}
                     <div class="list-group-item d-flex justify-content-between metric-list-item">
                         <span class="metric-list-symbol">{{ row.symbol }}</span>
@@ -196,7 +196,7 @@
                     </div>
                     {% endfor %}
                     {% if not worst_positions %}
-                    <div class="list-group-item text-muted metric-list-item">No positions yet.</div>
+                    <div class="list-group-item text-muted metric-list-item">{{ "No decliners today." if positions else "No positions yet." }}</div>
                     {% endif %}
                 </div>
             </div>
@@ -256,6 +256,30 @@
         return (num >= 0 ? "+" : "") + fixed + "%";
     }
 
+    function escapeHtml(value) {
+        return String(value || "").replace(/[&<>"']/g, (ch) => ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#39;",
+        })[ch]);
+    }
+
+    function renderPerformerList(container, rows, emptyText, valueClass) {
+        if (!container) return;
+        if (!rows.length) {
+            container.innerHTML = '<div class="list-group-item text-muted metric-list-item">' + emptyText + '</div>';
+            return;
+        }
+        container.innerHTML = rows.map((row) => (
+            '<div class="list-group-item d-flex justify-content-between metric-list-item">' +
+            '<span class="metric-list-symbol">' + escapeHtml(row.symbol || "") + '</span>' +
+            '<span class="' + valueClass + '">' + fmtSignedPct(row.day_change_pct || 0) + '</span>' +
+            '</div>'
+        )).join("");
+    }
+
     async function refreshDashboardSummary() {
         try {
             const res = await fetch("/api/dashboard/summary", { credentials: "include" });
@@ -267,6 +291,9 @@
             const news = Array.isArray(data.news) ? data.news : [];
             const currency = data.currency_symbol || "$";
             const portfolio = data.portfolio || {};
+            const positions = Array.isArray(data.positions) ? data.positions : [];
+            const topPositions = Array.isArray(data.top_positions) ? data.top_positions : [];
+            const worstPositions = Array.isArray(data.worst_positions) ? data.worst_positions : [];
             const goalDeadline = data.goal_deadline || {};
 
             const benchmarkValue = document.getElementById("benchmarkValue");
@@ -281,6 +308,8 @@
             const totalReturn = document.getElementById("totalReturn");
             const goalDeadlineText = document.getElementById("goalDeadlineText");
             const goalDeadlineDate = document.getElementById("goalDeadlineDate");
+            const topPerformersList = document.getElementById("topPerformersList");
+            const worstPerformersList = document.getElementById("worstPerformersList");
             const marketHeadlines = document.getElementById("marketHeadlines");
 
             if (benchmarkValue) benchmarkValue.textContent = currency + Number(benchmark.price || 0).toFixed(2);
@@ -324,6 +353,18 @@
                     ? ("Target date: " + String(goalDeadline.target_deadline || ""))
                     : "Set your deadline in Portfolio Goals";
             }
+            renderPerformerList(
+                topPerformersList,
+                topPositions,
+                positions.length ? "No gainers today." : "No positions yet.",
+                "performance-up"
+            );
+            renderPerformerList(
+                worstPerformersList,
+                worstPositions,
+                positions.length ? "No decliners today." : "No positions yet.",
+                "performance-down"
+            );
             if (marketHeadlines) {
                 if (!news.length) {
                     marketHeadlines.innerHTML = '<div class="list-group-item text-muted metric-list-item">No live headlines found right now.</div>';

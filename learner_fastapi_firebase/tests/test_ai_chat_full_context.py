@@ -48,3 +48,42 @@ def test_web_ai_chat_uses_full_context(client, auth_headers):
     assert response.status_code == 200
     assert captured["context"]["access_mode"] == "full"
     assert "market_intel" in captured["context"]
+
+
+def test_dashboard_ai_receives_user_tradebook_context(client, auth_headers):
+    captured: dict = {}
+
+    def fake_dashboard_brief(uid, market, payload):  # type: ignore[no-untyped-def]
+        captured["payload"] = payload
+        return {"headline": "ok", "summary": "ok", "risk_level": "Medium", "actions": [], "news_watch": []}
+
+    client.app.state.ai_advisor.dashboard_brief = fake_dashboard_brief  # type: ignore[assignment]
+
+    response = client.get("/api/ai/dashboard-brief", headers=auth_headers)
+    assert response.status_code == 200
+
+    context = captured["payload"]["user_context"]
+    assert context["access_mode"] == "advisor_compact"
+    assert context["data_origin"] == "firestore_repository"
+    assert "tradebook" in context
+    assert "recent_trades" in context["tradebook"]
+    assert "journal_entries" in context["tradebook"]
+
+
+def test_quote_signal_receives_user_tradebook_context(client, auth_headers):
+    captured: dict = {}
+
+    def fake_quote_signal(uid, market, symbol, payload):  # type: ignore[no-untyped-def]
+        captured["payload"] = payload
+        return {"action": "Hold", "buy_score": 50, "confidence": 50, "news_bias": "Neutral", "factors": []}
+
+    client.app.state.ai_advisor.quote_signal = fake_quote_signal  # type: ignore[assignment]
+
+    response = client.get("/api/ai/quote-signal?symbol=AAPL", headers=auth_headers)
+    assert response.status_code == 200
+
+    context = captured["payload"]["user_context"]
+    assert context["portfolio"]["market"] == "US"
+    assert "portfolio_performance" in context
+    assert "tradebook" in context
+    assert "stats" in context["tradebook"]

@@ -80,6 +80,32 @@ class AIAdvisorService:
             OpenAI(base_url=base_url, api_key=api_key, timeout=self.timeout_seconds) if self._enabled else None
         )
 
+    def _json_system_prompt(self, page: str) -> str:
+        return (
+            "You are StockSight AI Coach inside a beginner paper-trading app. "
+            f"Current page/tool: {page}. "
+            "Use the provided JSON as the source of truth. When user_context is present, inspect its portfolio, "
+            "portfolio_performance, tradebook.recent_trades, tradebook.journal_entries, orders, watchlists, "
+            "alerts, learning docs, mistakes, and weekly summary before giving advice. "
+            "Connect recommendations to concrete user history, especially repeated symbols, realized P/L, "
+            "open position size, journal lessons, and checklist discipline. "
+            "Do not invent missing data, prices, trades, or journal notes. If a field is absent, say what to check next. "
+            "Keep advice educational for paper trading only; never promise returns or present financial advice. "
+            "Respond as strict compact JSON only, with no markdown and no prose outside JSON."
+        )
+
+    def _chat_system_prompt(self) -> str:
+        return (
+            "You are StockSight AI Coach. Be clear, practical, and friendly for a beginner investor. "
+            "Use the Context JSON as your source of truth before answering. It may include the user's profile, "
+            "preferences, current portfolio, portfolio performance, full tradebook, trade journal notes, watchlists, "
+            "alerts, open orders, learning goals, quiz/streak progress, market mood, headlines, and per-holding intel. "
+            "When relevant, explicitly anchor your answer to that history: name the holding, recent trade, journal lesson, "
+            "risk habit, or learning goal that drove your advice. "
+            "If asked for a trade plan, include entry trigger, stop/risk, exit/review rule, and what would invalidate it. "
+            "Never claim certainty, guarantee profit, or give real-money financial advice. This is educational paper-trading coaching."
+        )
+
     def _get_cache(self, key: str) -> dict[str, Any] | None:
         row = self._cache.get(key)
         if not row:
@@ -118,7 +144,12 @@ class AIAdvisorService:
                 temperature=0.45,
                 top_p=0.95,
                 max_tokens=max_tokens,
-                extra_body={"chat_template_kwargs": {"thinking": True}},
+                extra_body={
+                    "chat_template_kwargs": {
+                        "enable_thinking": True,
+                        "clear_thinking": False,
+                    }
+                },
                 stream=True,
             )
         except Exception:
@@ -205,6 +236,9 @@ class AIAdvisorService:
         mistakes = (payload.get("mistakes") or {}).get("mistakes") or []
         market_mood = payload.get("market_mood") or {}
         headlines = payload.get("news") or []
+        user_context = payload.get("user_context") or {}
+        tradebook = user_context.get("tradebook") or {}
+        trade_stats = tradebook.get("stats") or {}
 
         if health_score >= 75:
             risk_label = "Low"
@@ -239,7 +273,8 @@ class AIAdvisorService:
 
         summary = (
             f"{market} coach update: health score is {health_score}/100 with {len(positions)} active position(s). "
-            f"Main improvement area: {first_mistake}"
+            f"Tradebook: {int(_f(trade_stats.get('trade_count'), 0))} trade(s), "
+            f"{_f(trade_stats.get('realized_pnl'), 0):+.2f} realized P/L. Main improvement area: {first_mistake}"
         )
         return {
             "headline": f"{market} Paper Trading Coach",
@@ -295,22 +330,20 @@ class AIAdvisorService:
             "positions": payload.get("positions") or [],
             "top_positions": payload.get("top_positions") or [],
             "worst_positions": payload.get("worst_positions") or [],
+            "user_context": payload.get("user_context") or {},
         }
         fallback = self._dashboard_fallback({**payload, "market": market}, reason="rule_based")
-        system = (
-            "You are a calm, practical paper-trading coach for beginner investors. "
-            "Respond in compact JSON only. No markdown and no prose outside JSON."
-        )
+        system = self._json_system_prompt("dashboard coach")
         user = (
             "Analyze this paper-trading snapshot and return JSON with keys: "
             "headline (string), summary (string), risk_level (Low|Medium|High), "
             "actions (array of 3-4 concrete next steps), news_watch (array of 2-4 items), "
-            "disclaimer (one sentence). Keep advice educational and specific.\n"
+            "disclaimer (one sentence). Use tradebook/journal history when present and keep advice specific.\n"
             f"Snapshot:\n{json.dumps(prompt_payload, ensure_ascii=True)}"
         )
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         return self._llm_or_fallback(
-            cache_key=f"dashboard:{uid}:{market}",
+            cache_key=f"dashboard:{uid}:{market}:{hash(json.dumps(prompt_payload, sort_keys=True, default=str))}",
             messages=messages,
             fallback=fallback,
             normalizer=self._normalize_dashboard,
@@ -352,18 +385,16 @@ class AIAdvisorService:
 
     def portfolio_explainer(self, uid: str, market: str, payload: dict[str, Any]) -> dict[str, Any]:
         fallback = self._portfolio_fallback(payload, reason="rule_based")
-        system = (
-            "You are an investing tutor for teenagers using a paper-trading app. "
-            "Respond only with JSON and keep language simple."
-        )
+        system = self._json_system_prompt("portfolio explainer")
         user = (
             "Return JSON with keys: plain_english, analogy, why_it_moved, next_steps (3-4 bullets). "
-            "Use easy words and no jargon.\n"
+            "Use easy words and no jargon. Refer to user_context.tradebook and journal notes if present, "
+            "especially lessons learned from past buys/sells.\n"
             f"Portfolio snapshot:\n{json.dumps(payload, ensure_ascii=True)}"
         )
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         return self._llm_or_fallback(
-            cache_key=f"portfolio:{uid}:{market}",
+            cache_key=f"portfolio:{uid}:{market}:{hash(json.dumps(payload, sort_keys=True, default=str))}",
             messages=messages,
             fallback=fallback,
             normalizer=self._normalize_portfolio,
@@ -408,17 +439,15 @@ class AIAdvisorService:
 
     def forecast_explainer(self, uid: str, market: str, symbol: str, payload: dict[str, Any]) -> dict[str, Any]:
         fallback = self._forecast_fallback(symbol=symbol, payload=payload, reason="rule_based")
-        system = (
-            "You are a paper-trading coach. Respond as strict JSON only. "
-            "Keep explanations clear for a 15-year-old."
-        )
+        system = self._json_system_prompt("forecast explainer")
         user = (
             "Return JSON with keys: quick_take, explain_like_15, portfolio_link, next_steps (3-4 bullets). "
+            "Tie the forecast to the user's existing holdings, tradebook, and journal discipline when present. "
             f"Symbol: {symbol}. Snapshot:\n{json.dumps(payload, ensure_ascii=True)}"
         )
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         return self._llm_or_fallback(
-            cache_key=f"forecast:{uid}:{market}:{symbol}",
+            cache_key=f"forecast:{uid}:{market}:{symbol}:{hash(json.dumps(payload, sort_keys=True, default=str))}",
             messages=messages,
             fallback=fallback,
             normalizer=self._normalize_forecast,
@@ -630,16 +659,15 @@ class AIAdvisorService:
             "market_mood": payload.get("market_mood") or {},
             "close_prices": (payload.get("close_prices") or [])[-120:],
             "news": safe_news,
+            "user_context": payload.get("user_context") or {},
         }
         fallback = self._quote_signal_fallback(symbol=symbol, market=market, payload=prompt_payload, reason="rule_based")
-        system = (
-            "You are a disciplined paper-trading coach. "
-            "Respond in strict JSON only with no markdown."
-        )
+        system = self._json_system_prompt("quote signal")
         user = (
             "Return JSON with keys: action (Buy|Hold|Sell), buy_score (1-100), confidence (1-100), "
             "news_bias (Positive|Neutral|Negative), summary (one short sentence), "
-            "factors (array of 3-5 short bullets), disclaimer (one sentence).\n"
+            "factors (array of 3-5 short bullets), disclaimer (one sentence). "
+            "If the user already owns or traded this symbol, include that context in summary or factors.\n"
             f"Snapshot:\n{json.dumps(prompt_payload, ensure_ascii=True)}"
         )
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
@@ -685,9 +713,10 @@ class AIAdvisorService:
 
     def tool_tip(self, uid: str, market: str, topic: str, payload: dict[str, Any]) -> dict[str, Any]:
         fallback = self._tool_tip_fallback(topic=topic, payload=payload, reason="rule_based")
-        system = "You are a concise trading tutor. Respond only with JSON."
+        system = self._json_system_prompt(f"tool tip: {topic}")
         user = (
             "Return JSON with keys: title, explain_like_15, steps (3 short bullets), context. "
+            "Make the tip specific to the current page data and user_context tradebook/journal history when present. "
             f"Topic: {topic}. Market: {market}. Data: {json.dumps(payload, ensure_ascii=True)}"
         )
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
@@ -841,13 +870,7 @@ class AIAdvisorService:
             if role in {"user", "assistant"} and content:
                 safe_history.append({"role": role, "content": content[:1200]})
 
-        system = (
-            "You are StockSight AI Coach. Be clear, practical, and friendly. "
-            "Assume the user is a beginner and explain like they are 15 when needed. "
-            "Focus on paper trading safety and learning, not financial guarantees. "
-            "You have full access to user portfolio/account/activity and market/news context provided in JSON. "
-            "Use that context proactively and reference concrete data points when helpful."
-        )
+        system = self._chat_system_prompt()
         primer = (
             "Context JSON for this user session:\n"
             f"{json.dumps(context, ensure_ascii=True, default=str)}"
