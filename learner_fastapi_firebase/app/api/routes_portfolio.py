@@ -46,6 +46,11 @@ def buy_trade(payload: TradeRequest, request: Request, uid: str = Depends(curren
     market = repo.get_selected_market(uid)
     symbol = market_data.resolve_symbol(payload.symbol, market)
     quote = market_data.quote(symbol, market)
+    quote_price = float(quote["price"])
+    if payload.stop_loss_price is not None and payload.stop_loss_price >= quote_price:
+        raise HTTPException(status_code=400, detail="Stop-loss price must be below the current price")
+    if payload.trailing_stop_amount is not None and payload.trailing_stop_amount >= quote_price:
+        raise HTTPException(status_code=400, detail="Trailing amount must be below the current price")
     learning_engine.save_checklist(uid, payload.checklist or {})
     result = repo.apply_trade(
         uid=uid,
@@ -53,7 +58,7 @@ def buy_trade(payload: TradeRequest, request: Request, uid: str = Depends(curren
         side="buy",
         symbol=symbol,
         quantity=payload.quantity,
-        price=float(quote["price"]),
+        price=quote_price,
         order_type=payload.order_type,
         notes=payload.notes,
     )
@@ -68,6 +73,7 @@ def buy_trade(payload: TradeRequest, request: Request, uid: str = Depends(curren
                 quantity=payload.quantity,
                 order_type="stop_loss",
                 trigger_price=payload.stop_loss_price,
+                oco_group=result["trade"]["id"],
                 notes=f"Auto stop-loss for trade {result['trade']['id']}",
             )
         )
@@ -82,6 +88,8 @@ def buy_trade(payload: TradeRequest, request: Request, uid: str = Depends(curren
                 order_type="trailing_stop",
                 trail_percent=payload.trailing_stop_percent,
                 trail_amount=payload.trailing_stop_amount,
+                reference_price=quote_price,
+                oco_group=result["trade"]["id"],
                 notes=f"Auto trailing stop for trade {result['trade']['id']}",
             )
         )

@@ -1,0 +1,35 @@
+INFO:     127.0.0.1:64789 - "GET /algorithmic-trading HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64790 - "GET /api/algo/strategies HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61610 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61610 - "GET /static/styles.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61610 - "GET /api/dashboard/summary HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:63463 - "GET /api/ai/dashboard-brief HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:61938 - "GET /algorithmic-trading HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63762 - "GET /login?next=%2Falgorithmic-trading HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63762 - "GET /static/styles.css HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49201 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49201 - "GET /static/styles.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49201 - "GET /api/dashboard/summary HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:64362 - "GET /api/ai/dashboard-brief HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:64362 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64362 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57921 - "POST /api/auth/google HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57921 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57921 - "GET /api/dashboard/summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57921 - "GET /api/ai/dashboard-brief HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57921 - "POST /api/algo/run-enabled HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57921 - "GET /algorithmic-trading HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57921 - "POST /api/algo/backtest HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57921 - "POST /api/algo/run-enabled HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57921 - "POST /api/algo/backtest HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57028 - "POST /api/algo/backtest HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57028 - "POST /api/algo/backtest HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57028 - "POST /api/algo/backtest HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57028 - "GET /instructions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57028 - "GET /static/styles.css HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:57028 - "POST /api/auth/logout HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57028 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60591 - "POST /api/auth/google HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60591 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60591 - "GET /api/dashboard/summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60591 - "GET /api/ai/dashboard-brief HTTP/1.1" 200 OK

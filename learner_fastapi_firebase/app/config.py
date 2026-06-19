@@ -81,7 +81,7 @@ def get_settings() -> Settings:
         market_data_cache_seconds=int(os.getenv("MARKET_DATA_CACHE_SECONDS", "900")),
         nvidia_api_key=os.getenv("NVIDIA_API_KEY", "").strip(),
         nvidia_base_url=os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1").strip(),
-        nvidia_model=os.getenv("NVIDIA_MODEL", "z-ai/glm4.7").strip(),
-        ai_request_timeout_seconds=float(os.getenv("AI_REQUEST_TIMEOUT_SECONDS", "8")),
+        nvidia_model=os.getenv("NVIDIA_MODEL", "nvidia/nemotron-3-ultra-550b-a55b").strip(),
+        ai_request_timeout_seconds=float(os.getenv("AI_REQUEST_TIMEOUT_SECONDS", "30")),
         ai_cache_seconds=int(os.getenv("AI_CACHE_SECONDS", "1200")),
     )

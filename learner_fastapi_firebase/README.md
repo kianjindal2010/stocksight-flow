@@ -21,7 +21,8 @@ Standalone learner-first app in `learner_fastapi_firebase/`.
 5. Add NVIDIA AI values (placeholder keys are already included):
    - `NVIDIA_API_KEY`
    - `NVIDIA_BASE_URL`
-   - `NVIDIA_MODEL`
+   - `NVIDIA_MODEL` (defaults to `nvidia/nemotron-3-ultra-550b-a55b`)
+   - `AI_REQUEST_TIMEOUT_SECONDS` (defaults to 30 seconds before the app uses its contextual backup)
 6. Run:
    - `uvicorn learner_fastapi_firebase.app.main:app --reload --host 127.0.0.1 --port 8010`
 

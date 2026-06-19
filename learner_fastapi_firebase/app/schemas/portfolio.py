@@ -11,7 +11,7 @@ class TradeRequest(BaseModel):
     notes: str = ""
     checklist: dict | None = None
     stop_loss_price: float | None = Field(default=None, gt=0)
-    trailing_stop_percent: float | None = Field(default=None, gt=0)
+    trailing_stop_percent: float | None = Field(default=None, gt=0, lt=100)
     trailing_stop_amount: float | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")

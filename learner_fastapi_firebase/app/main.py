@@ -10,7 +10,7 @@ from urllib.parse import urlencode
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -620,8 +620,9 @@ def create_app() -> FastAPI:
     def _process_open_orders(uid: str, market: str) -> int:
         filled = 0
         orders = app.state.repo.list_orders(uid, market)
+        cancelled_order_ids: set[str] = set()
         for order in orders:
-            if str(order.get("status")) != "open":
+            if str(order.get("status")) != "open" or str(order.get("id")) in cancelled_order_ids:
                 continue
             try:
                 quote = app.state.market_data.quote(order["symbol"], market)
@@ -633,6 +634,10 @@ def create_app() -> FastAPI:
                     app.state.repo.update_order(uid, order["id"], order_updates)
                 if not should_fill:
                     continue
+            except Exception as exc:
+                logger.warning("Could not check order %s: %s", order.get("id"), exc)
+                continue
+            try:
                 trade_result = app.state.repo.apply_trade(
                     uid=uid,
                     market=market,
@@ -650,6 +655,21 @@ def create_app() -> FastAPI:
                     trade_id=trade_result["trade"]["id"],
                 )
                 filled += 1
+                oco_group = str(order.get("oco_group") or "").strip()
+                if oco_group:
+                    for sibling in orders:
+                        sibling_id = str(sibling.get("id") or "")
+                        if (
+                            sibling_id != str(order.get("id"))
+                            and str(sibling.get("status")) == "open"
+                            and str(sibling.get("oco_group") or "").strip() == oco_group
+                        ):
+                            app.state.repo.update_order(
+                                uid,
+                                sibling_id,
+                                {"status": "cancelled", "notes": f"{str(sibling.get('notes') or '').strip()} | Paired protective order filled".strip(" |")},
+                            )
+                            cancelled_order_ids.add(sibling_id)
             except Exception as exc:
                 app.state.repo.update_order(
                     uid,
@@ -682,6 +702,8 @@ def create_app() -> FastAPI:
                     "role": role,
                     "content": content[:4000],
                     "created_at": str(row.get("created_at") or ""),
+                    "source": str(row.get("source") or "")[:80],
+                    "model": str(row.get("model") or "")[:160],
                 }
             )
         return history
@@ -1156,6 +1178,20 @@ def create_app() -> FastAPI:
             market = app.state.repo.get_selected_market(uid)
             resolved = app.state.market_data.resolve_symbol(symbol, market)
             quote = app.state.market_data.quote(resolved, market)
+            quote_price = _f(quote.get("price"))
+            has_stop_loss = stop_loss_price is not None and _f(stop_loss_price) > 0
+            has_trailing_percent = trailing_stop_percent is not None and _f(trailing_stop_percent) > 0
+            has_trailing_amount = trailing_stop_amount is not None and _f(trailing_stop_amount) > 0
+            if has_stop_loss and (has_trailing_percent or has_trailing_amount):
+                raise ValueError("Choose either a fixed stop loss or a trailing stop, not both")
+            if has_trailing_percent and has_trailing_amount:
+                raise ValueError("Use either trailing stop percent or trailing stop amount, not both")
+            if has_stop_loss and _f(stop_loss_price) >= quote_price:
+                raise ValueError("Stop-loss price must be below the current price")
+            if has_trailing_percent and _f(trailing_stop_percent) >= 100:
+                raise ValueError("Trailing stop percent must be less than 100")
+            if has_trailing_amount and _f(trailing_stop_amount) >= quote_price:
+                raise ValueError("Trailing stop amount must be below the current price")
             app.state.learning_engine.save_checklist(
                 uid,
                 {
@@ -1173,11 +1209,11 @@ def create_app() -> FastAPI:
                 side="buy",
                 symbol=resolved,
                 quantity=quantity,
-                price=_f(quote.get("price")),
+                price=quote_price,
                 order_type="market",
                 notes=notes,
             )
-            if stop_loss_price is not None and _f(stop_loss_price) > 0:
+            if has_stop_loss:
                 app.state.repo.create_order(
                     uid=uid,
                     market=market,
@@ -1186,12 +1222,9 @@ def create_app() -> FastAPI:
                     quantity=quantity,
                     order_type="stop_loss",
                     trigger_price=_f(stop_loss_price),
+                    oco_group=trade_result["trade"]["id"],
                     notes=f"Auto stop-loss for trade {trade_result['trade']['id']}",
                 )
-            has_trailing_percent = trailing_stop_percent is not None and _f(trailing_stop_percent) > 0
-            has_trailing_amount = trailing_stop_amount is not None and _f(trailing_stop_amount) > 0
-            if has_trailing_percent and has_trailing_amount:
-                raise ValueError("Use either trailing stop percent or trailing stop amount, not both")
             if has_trailing_percent or has_trailing_amount:
                 app.state.repo.create_order(
                     uid=uid,
@@ -1202,6 +1235,8 @@ def create_app() -> FastAPI:
                     order_type="trailing_stop",
                     trail_percent=_f(trailing_stop_percent) if has_trailing_percent else None,
                     trail_amount=_f(trailing_stop_amount) if has_trailing_amount else None,
+                    reference_price=quote_price,
+                    oco_group=trade_result["trade"]["id"],
                     notes=f"Auto trailing stop for trade {trade_result['trade']['id']}",
                 )
             return _redirect("/buy", message=f"Buy order executed: {quantity} x {resolved}")
@@ -1215,11 +1250,14 @@ def create_app() -> FastAPI:
             return uid
         market = app.state.repo.get_selected_market(uid)
         portfolio = app.state.repo.get_portfolio(uid, market)
-        owned_symbols = [row.get("symbol") for row in portfolio.get("positions", []) if row.get("symbol")]
+        owned_positions = [
+            row for row in portfolio.get("positions", [])
+            if row.get("symbol") and _i(row.get("shares")) > 0
+        ]
         return templates.TemplateResponse(
             request,
             "sell.html",
-            _context(request, {"owned_symbols": owned_symbols}),
+            _context(request, {"owned_positions": owned_positions}),
         )
 
     @app.post("/sell")
@@ -1267,6 +1305,19 @@ def create_app() -> FastAPI:
             _context(request, {"orders": orders, "flash": extra_message}),
         )
 
+    @app.post("/orders/check")
+    async def check_orders(request: Request):
+        uid = _auth_or_redirect(request)
+        if isinstance(uid, RedirectResponse):
+            raise HTTPException(status_code=401, detail="Authentication required")
+        market = app.state.repo.get_selected_market(uid)
+        fills = _process_open_orders(uid, market)
+        open_orders = sum(
+            1 for row in app.state.repo.list_orders(uid, market)
+            if str(row.get("status")) == "open"
+        )
+        return {"filled": fills, "open": open_orders}
+
     @app.post("/orders/place")
     async def place_order(
         request: Request,
@@ -1286,10 +1337,14 @@ def create_app() -> FastAPI:
             market = app.state.repo.get_selected_market(uid)
             resolved = app.state.market_data.resolve_symbol(symbol, market)
             normalized_type = str(order_type or "limit").lower().strip()
+            reference_price = None
             if normalized_type == "market":
                 trigger_price = None
                 trail_percent = None
                 trail_amount = None
+            elif normalized_type == "trailing_stop":
+                quote = app.state.market_data.quote(resolved, market)
+                reference_price = _f(quote.get("price"))
             app.state.repo.create_order(
                 uid=uid,
                 market=market,
@@ -1300,6 +1355,7 @@ def create_app() -> FastAPI:
                 trigger_price=trigger_price,
                 trail_percent=trail_percent,
                 trail_amount=trail_amount,
+                reference_price=reference_price,
                 notes=notes,
             )
             return _redirect("/orders", message=f"{normalized_type.replace('_', ' ').title()} order placed for {resolved}.")
@@ -1845,7 +1901,15 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(
             request,
             "ai_chat.html",
-            _context(request, {"chat_history": history, "chat_starters": starters}),
+            _context(
+                request,
+                {
+                    "chat_history": history,
+                    "chat_starters": starters,
+                    "ai_model": app.state.ai_advisor.model,
+                    "ai_enabled": app.state.ai_advisor.enabled,
+                },
+            ),
         )
 
     @app.post("/ai-chat")
@@ -1856,6 +1920,8 @@ def create_app() -> FastAPI:
         market = app.state.repo.get_selected_market(uid)
         text = str(message or "").strip()
         if not text:
+            if request.headers.get("X-Requested-With") == "stocksight-chat":
+                return JSONResponse({"detail": "Please type a question for the AI coach."}, status_code=400)
             return _redirect("/ai-chat", error="Please type a question for the AI coach.")
 
         history = _load_chat_history(uid, market)
@@ -1873,11 +1939,18 @@ def create_app() -> FastAPI:
             history=history,
             context=context_payload,
         )
-        updated = history + [
-            {"role": "user", "content": text, "created_at": _utc_now_iso()},
-            {"role": "assistant", "content": str(ai_response.get("reply") or "").strip(), "created_at": _utc_now_iso()},
-        ]
+        user_row = {"role": "user", "content": text, "created_at": _utc_now_iso()}
+        assistant_row = {
+            "role": "assistant",
+            "content": str(ai_response.get("reply") or "").strip(),
+            "created_at": _utc_now_iso(),
+            "source": str(ai_response.get("source") or ""),
+            "model": str(ai_response.get("model") or ""),
+        }
+        updated = history + [user_row, assistant_row]
         _save_chat_history(uid, market, updated)
+        if request.headers.get("X-Requested-With") == "stocksight-chat":
+            return JSONResponse({"market": market, "message": assistant_row})
         return _redirect("/ai-chat")
 
     @app.post("/ai-chat/clear")

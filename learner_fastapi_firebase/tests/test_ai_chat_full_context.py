@@ -50,6 +50,30 @@ def test_web_ai_chat_uses_full_context(client, auth_headers):
     assert "market_intel" in captured["context"]
 
 
+def test_web_ai_chat_supports_async_response_and_saves_model_metadata(client, auth_headers):
+    def fake_chat_reply(uid, market, message, history=None, context=None):  # type: ignore[no-untyped-def]
+        return {
+            "reply": "A more natural answer",
+            "source": "nvidia_llm",
+            "generated_at": "now",
+            "model": "nvidia/nemotron-3-ultra-550b-a55b",
+        }
+
+    client.app.state.ai_advisor.chat_reply = fake_chat_reply  # type: ignore[assignment]
+    headers = {**auth_headers, "X-Requested-With": "stocksight-chat"}
+    response = client.post("/ai-chat", headers=headers, data={"message": "Help me think this through"})
+
+    assert response.status_code == 200
+    message = response.json()["message"]
+    assert message["content"] == "A more natural answer"
+    assert message["source"] == "nvidia_llm"
+    assert message["model"] == "nvidia/nemotron-3-ultra-550b-a55b"
+
+    history = client.get("/api/learning/chat/history", headers=auth_headers).json()["messages"]
+    assert history[-1]["source"] == "nvidia_llm"
+    assert history[-1]["model"] == "nvidia/nemotron-3-ultra-550b-a55b"
+
+
 def test_dashboard_ai_receives_user_tradebook_context(client, auth_headers):
     captured: dict = {}
 

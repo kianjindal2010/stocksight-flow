@@ -10,27 +10,49 @@
             <p class="sell-subtitle mb-0">Choose from positions you already own.</p>
         </div>
         <div class="sell-card-body">
-            {% if owned_symbols %}
-            <form method="post" action="/sell">
-                <div class="mb-3">
-                    <label class="form-label fw-semibold">Stock</label>
-                    <select class="form-select" name="symbol" required>
-                        {% for symbol in owned_symbols %}
-                        <option value="{{ symbol }}">{{ symbol }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label fw-semibold">Shares</label>
-                    <input class="form-control" name="quantity" type="number" min="1" placeholder="Number of shares" required>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label fw-semibold">Notes (optional)</label>
-                    <input class="form-control" name="notes" placeholder="Exit reason or risk action">
-                </div>
-                <div class="d-flex gap-2">
-                    <button class="btn btn-danger" type="submit">Place Sell Order</button>
-                    <a class="btn btn-outline-secondary" href="/">Back to Dashboard</a>
+            {% if owned_positions %}
+            <form method="post" action="/sell" id="sellForm">
+                <div class="row g-4">
+                    <div class="col-lg-8">
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold" for="sellSymbol">Stock</label>
+                            <select class="form-select" id="sellSymbol" name="symbol" required>
+                                {% for position in owned_positions %}
+                                <option value="{{ position.symbol }}" data-shares="{{ position.shares }}">{{ position.symbol }} · {{ position.shares }} share{% if position.shares != 1 %}s{% endif %} owned</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+                                <label class="form-label fw-semibold mb-0" for="sellQuantity">Shares to sell</label>
+                                <span class="quantity-limit" id="quantityLimit"></span>
+                            </div>
+                            <input class="form-control" id="sellQuantity" name="quantity" type="number" min="1" max="{{ owned_positions[0].shares }}" value="1" required>
+                            <div class="quick-quantity" aria-label="Quick share amounts">
+                                <button type="button" data-sell-fraction="0.25">1/4</button>
+                                <button type="button" data-sell-fraction="0.5">Half</button>
+                                <button type="button" data-sell-fraction="0.75">3/4</button>
+                                <button type="button" data-sell-fraction="1">All</button>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Notes (optional)</label>
+                            <input class="form-control" name="notes" placeholder="Exit reason or risk action">
+                        </div>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <button class="btn btn-danger" type="submit">Sell selected shares</button>
+                            <a class="btn btn-outline-secondary" href="/">Back to Dashboard</a>
+                        </div>
+                    </div>
+                    <div class="col-lg-4">
+                        <aside class="position-summary" aria-live="polite">
+                            <span class="position-summary-label">Your position</span>
+                            <strong id="ownedSymbol">{{ owned_positions[0].symbol }}</strong>
+                            <div class="owned-share-count"><span id="ownedShares">{{ owned_positions[0].shares }}</span> shares</div>
+                            <div class="position-summary-row"><span>Selling</span><strong id="sellingShares">1</strong></div>
+                            <div class="position-summary-row"><span>Remaining</span><strong id="remainingShares">{{ owned_positions[0].shares - 1 }}</strong></div>
+                        </aside>
+                    </div>
                 </div>
             </form>
             {% else %}
@@ -39,4 +61,48 @@
         </div>
     </div>
 </div>
+{% if owned_positions %}
+<script>
+const sellSymbol = document.getElementById("sellSymbol");
+const sellQuantity = document.getElementById("sellQuantity");
+const ownedSymbol = document.getElementById("ownedSymbol");
+const ownedShares = document.getElementById("ownedShares");
+const sellingShares = document.getElementById("sellingShares");
+const remainingShares = document.getElementById("remainingShares");
+const quantityLimit = document.getElementById("quantityLimit");
+
+function selectedPosition() {
+    const option = sellSymbol.selectedOptions[0];
+    return { symbol: option?.value || "", shares: Number.parseInt(option?.dataset.shares || "0", 10) };
+}
+
+function syncSellSummary(resetQuantity = false) {
+    const position = selectedPosition();
+    sellQuantity.max = String(position.shares);
+    if (resetQuantity) sellQuantity.value = "1";
+    const requested = Number.parseInt(sellQuantity.value || "1", 10);
+    const quantity = Math.min(position.shares, Math.max(1, Number.isFinite(requested) ? requested : 1));
+    sellQuantity.value = String(quantity);
+    ownedSymbol.textContent = position.symbol;
+    ownedShares.textContent = String(position.shares);
+    sellingShares.textContent = String(quantity);
+    remainingShares.textContent = String(Math.max(0, position.shares - quantity));
+    quantityLimit.textContent = `${position.shares} available`;
+}
+
+document.querySelectorAll("[data-sell-fraction]").forEach((button) => {
+    button.addEventListener("click", () => {
+        const fraction = Number.parseFloat(button.dataset.sellFraction || "1");
+        const shares = selectedPosition().shares;
+        sellQuantity.value = String(Math.max(1, Math.floor(shares * fraction)));
+        syncSellSummary();
+        sellQuantity.focus();
+    });
+});
+
+sellSymbol.addEventListener("change", () => syncSellSummary(true));
+sellQuantity.addEventListener("input", () => syncSellSummary());
+syncSellSummary();
+</script>
+{% endif %}
 {% endblock %}

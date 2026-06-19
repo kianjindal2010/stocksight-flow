@@ -24,19 +24,41 @@
                     <label class="form-label fw-semibold">Notes (optional)</label>
                     <input class="form-control" name="notes" placeholder="Why are you entering this trade?">
                 </div>
-                <div class="mb-3">
-                    <label class="form-label fw-semibold">Stop Loss Price (optional)</label>
-                    <input class="form-control" name="stop_loss_price" type="number" min="0.01" step="0.01" placeholder="e.g. 95.00">
-                </div>
-                <div class="mb-3">
-                    <label class="form-label fw-semibold">Trailing Stop % (optional)</label>
-                    <input class="form-control" name="trailing_stop_percent" type="number" min="0.01" step="0.01" placeholder="e.g. 2">
-                    <div class="form-text">Use either trailing percent or trailing amount.</div>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label fw-semibold">Trailing Stop Amount (optional)</label>
-                    <input class="form-control" name="trailing_stop_amount" type="number" min="0.01" step="0.01" placeholder="e.g. 5.00">
-                </div>
+                <fieldset class="protection-panel mb-4">
+                    <legend>Protect this position <span>(optional)</span></legend>
+                    <p class="protection-help">Choose one exit rule. You can keep things simple and add one later from Orders.</p>
+                    <div class="protection-options" role="radiogroup" aria-label="Position protection">
+                        <label class="protection-option">
+                            <input type="radio" name="protection_type" value="none" checked>
+                            <span><strong>None</strong><small>Buy without an automatic exit</small></span>
+                        </label>
+                        <label class="protection-option">
+                            <input type="radio" name="protection_type" value="fixed">
+                            <span><strong>Stop loss</strong><small>Exit at a fixed price</small></span>
+                        </label>
+                        <label class="protection-option">
+                            <input type="radio" name="protection_type" value="trailing">
+                            <span><strong>Trailing stop</strong><small>Follow gains, then exit on a pullback</small></span>
+                        </label>
+                    </div>
+
+                    <div class="protection-fields mt-3" id="fixedStopFields" hidden>
+                        <label class="form-label fw-semibold" for="stopLossPrice">Stop-loss price</label>
+                        <input class="form-control" id="stopLossPrice" name="stop_loss_price" type="number" min="0.01" step="0.01" placeholder="e.g. 95.00" disabled>
+                        <div class="form-text">This must be below the current share price.</div>
+                    </div>
+
+                    <div class="protection-fields mt-3" id="trailingStopFields" hidden>
+                        <label class="form-label fw-semibold" for="trailingStopMode">Trail by</label>
+                        <select class="form-select mb-2" id="trailingStopMode" disabled>
+                            <option value="percent">Percentage</option>
+                            <option value="amount">Price amount</option>
+                        </select>
+                        <input class="form-control" id="trailingStopPercent" name="trailing_stop_percent" type="number" min="0.01" max="99.99" step="0.01" placeholder="e.g. 5 for 5%" disabled>
+                        <input class="form-control" id="trailingStopAmount" name="trailing_stop_amount" type="number" min="0.01" step="0.01" placeholder="e.g. 5.00" hidden disabled>
+                        <div class="form-text">The exit level moves up as the share price rises, but never moves back down.</div>
+                    </div>
+                </fieldset>
                 <div class="d-flex gap-2">
                     <button class="btn btn-primary" type="submit">Place Buy Order</button>
                     <a class="btn btn-outline-secondary" href="/">Back to Dashboard</a>
@@ -45,4 +67,37 @@
         </div>
     </div>
 </div>
+<script>
+const protectionChoices = document.querySelectorAll('input[name="protection_type"]');
+const fixedStopFields = document.getElementById("fixedStopFields");
+const trailingStopFields = document.getElementById("trailingStopFields");
+const stopLossPrice = document.getElementById("stopLossPrice");
+const trailingStopMode = document.getElementById("trailingStopMode");
+const trailingStopPercent = document.getElementById("trailingStopPercent");
+const trailingStopAmount = document.getElementById("trailingStopAmount");
+
+function syncProtectionFields() {
+    const protection = document.querySelector('input[name="protection_type"]:checked')?.value || "none";
+    const fixedSelected = protection === "fixed";
+    const trailingSelected = protection === "trailing";
+    const amountSelected = trailingStopMode?.value === "amount";
+
+    fixedStopFields.hidden = !fixedSelected;
+    trailingStopFields.hidden = !trailingSelected;
+    stopLossPrice.disabled = !fixedSelected;
+    stopLossPrice.required = fixedSelected;
+
+    trailingStopMode.disabled = !trailingSelected;
+    trailingStopPercent.hidden = !trailingSelected || amountSelected;
+    trailingStopPercent.disabled = !trailingSelected || amountSelected;
+    trailingStopPercent.required = trailingSelected && !amountSelected;
+    trailingStopAmount.hidden = !trailingSelected || !amountSelected;
+    trailingStopAmount.disabled = !trailingSelected || !amountSelected;
+    trailingStopAmount.required = trailingSelected && amountSelected;
+}
+
+protectionChoices.forEach((choice) => choice.addEventListener("change", syncProtectionFields));
+trailingStopMode?.addEventListener("change", syncProtectionFields);
+syncProtectionFields();
+</script>
 {% endblock %}

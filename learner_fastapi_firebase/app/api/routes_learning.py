@@ -40,6 +40,8 @@ def _chat_rows(raw_messages) -> list[dict]:
                 "role": role,
                 "content": content[:4000],
                 "created_at": str(row.get("created_at") or ""),
+                "source": str(row.get("source") or "")[:80],
+                "model": str(row.get("model") or "")[:160],
             }
         )
     return rows
@@ -200,7 +202,13 @@ def learning_chat_post(payload: dict, request: Request, uid: str = Depends(curre
     now = datetime.now(timezone.utc).isoformat()
     messages = history + [
         {"role": "user", "content": message, "created_at": now},
-        {"role": "assistant", "content": str(reply.get("reply") or "").strip(), "created_at": now},
+        {
+            "role": "assistant",
+            "content": str(reply.get("reply") or "").strip(),
+            "created_at": now,
+            "source": str(reply.get("source") or ""),
+            "model": str(reply.get("model") or ""),
+        },
     ]
     repo.set_learning_doc(uid, _chat_doc_id(market), {"messages": messages[-30:]}, merge=False)
     return {"market": market, "reply": reply, "messages": messages[-30:]}

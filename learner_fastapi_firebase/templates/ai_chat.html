@@ -8,46 +8,159 @@
         <div class="section-header d-flex justify-content-between align-items-center flex-wrap gap-2">
             <div>
                 <h2 class="section-title mb-1">AI Trading Coach Chat</h2>
-                <p class="section-subtitle mb-0">Ask anything about your portfolio, risk, and paper trades.</p>
+                <p class="section-subtitle mb-0">Ask a natural follow-up about your portfolio, risk, or paper trades.</p>
             </div>
-            <form method="post" action="/ai-chat/clear">
-                <button class="btn btn-outline-secondary btn-sm" type="submit">Clear Chat</button>
-            </form>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <span class="chat-model-pill" title="{{ ai_model }}">
+                    <span class="chat-status-dot {% if not ai_enabled %}is-offline{% endif %}"></span>
+                    {% if ai_enabled %}NVIDIA Nemotron 3 Ultra{% else %}Local backup coach{% endif %}
+                </span>
+                <form method="post" action="/ai-chat/clear">
+                    <button class="btn btn-outline-secondary btn-sm" type="submit">Clear Chat</button>
+                </form>
+            </div>
         </div>
 
         <div class="card-body">
-            <div class="ai-chat-window mb-3">
+            <div class="ai-chat-window mb-3" id="aiChatWindow" aria-live="polite">
                 {% if chat_history %}
                     {% for row in chat_history %}
                     <div class="chat-row {% if row.role == 'user' %}chat-user{% else %}chat-assistant{% endif %}">
                         <div class="chat-bubble">
                             <div class="chat-role">{{ "You" if row.role == "user" else "AI Coach" }}</div>
                             <div class="chat-content">{{ row.content }}</div>
+                            {% if row.role == "assistant" and row.source %}
+                            <div class="chat-meta">
+                                {{ "NVIDIA Nemotron 3 Ultra" if row.source == "nvidia_llm" else "Backup coach" }}
+                            </div>
+                            {% endif %}
                         </div>
                     </div>
                     {% endfor %}
                 {% else %}
-                <div class="text-muted mb-2">No chat yet. Try one of these starters:</div>
-                <ul class="mb-0">
+                <div class="chat-intro" id="chatEmptyState">
+                    <div class="chat-intro-title">What are you thinking about?</div>
+                    <div class="text-muted mb-3">Start anywhere. The coach remembers this conversation and uses your paper portfolio as context.</div>
+                    <div class="chat-suggestions">
                     {% for row in chat_starters %}
-                    <li>{{ row }}</li>
+                        <button type="button" class="chat-suggestion" data-chat-starter="{{ row }}">{{ row }}</button>
                     {% endfor %}
-                </ul>
+                    </div>
+                </div>
                 {% endif %}
             </div>
 
-            <form method="post" action="/ai-chat" class="d-flex gap-2 align-items-start">
+            <form method="post" action="/ai-chat" class="chat-composer" id="aiChatForm">
                 <textarea
                     class="form-control"
+                    id="aiChatInput"
                     name="message"
                     rows="3"
                     maxlength="2000"
                     placeholder="Ask the AI coach anything about your paper trades..."
                     required
                 ></textarea>
-                <button class="btn btn-primary" type="submit">Send</button>
+                <button class="btn btn-primary chat-send-button" id="aiChatSend" type="submit">Send</button>
             </form>
+            <div class="chat-disclaimer">Enter to send · Shift+Enter for a new line · Educational paper-trading guidance only</div>
         </div>
     </div>
 </div>
+
+<script>
+(() => {
+    const chatWindow = document.getElementById("aiChatWindow");
+    const form = document.getElementById("aiChatForm");
+    const input = document.getElementById("aiChatInput");
+    const sendButton = document.getElementById("aiChatSend");
+    if (!chatWindow || !form || !input || !sendButton) return;
+
+    const scrollToLatest = () => {
+        chatWindow.scrollTop = chatWindow.scrollHeight;
+    };
+
+    const addBubble = (role, content, source = "") => {
+        document.getElementById("chatEmptyState")?.remove();
+        const row = document.createElement("div");
+        row.className = `chat-row ${role === "user" ? "chat-user" : "chat-assistant"}`;
+
+        const bubble = document.createElement("div");
+        bubble.className = "chat-bubble";
+        const roleLabel = document.createElement("div");
+        roleLabel.className = "chat-role";
+        roleLabel.textContent = role === "user" ? "You" : "AI Coach";
+        const message = document.createElement("div");
+        message.className = "chat-content";
+        message.textContent = content;
+
+        bubble.append(roleLabel, message);
+        if (role === "assistant" && source) {
+            const meta = document.createElement("div");
+            meta.className = "chat-meta";
+            meta.textContent = source === "nvidia_llm" ? "NVIDIA Nemotron 3 Ultra" : "Backup coach";
+            bubble.append(meta);
+        }
+        row.append(bubble);
+        chatWindow.append(row);
+        scrollToLatest();
+        return row;
+    };
+
+    form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const text = input.value.trim();
+        if (!text || sendButton.disabled) return;
+
+        addBubble("user", text);
+        input.value = "";
+        input.disabled = true;
+        sendButton.disabled = true;
+        sendButton.textContent = "Thinking";
+        const pending = addBubble("assistant", "Thinking…");
+        pending.classList.add("chat-pending");
+
+        try {
+            const body = new FormData();
+            body.append("message", text);
+            const response = await fetch(form.action, {
+                method: "POST",
+                credentials: "include",
+                headers: { "X-Requested-With": "stocksight-chat" },
+                body,
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(payload.detail || "The coach could not answer right now.");
+
+            pending.remove();
+            const reply = payload.message || {};
+            addBubble("assistant", reply.content || "I could not form a response. Please try again.", reply.source || "");
+        } catch (error) {
+            pending.querySelector(".chat-content").textContent = error.message || "The coach could not answer right now.";
+            pending.classList.remove("chat-pending");
+        } finally {
+            input.disabled = false;
+            sendButton.disabled = false;
+            sendButton.textContent = "Send";
+            input.focus();
+            scrollToLatest();
+        }
+    });
+
+    input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+            event.preventDefault();
+            form.requestSubmit();
+        }
+    });
+
+    document.querySelectorAll("[data-chat-starter]").forEach((button) => {
+        button.addEventListener("click", () => {
+            input.value = button.getAttribute("data-chat-starter") || "";
+            form.requestSubmit();
+        });
+    });
+
+    scrollToLatest();
+})();
+</script>
 {% endblock %}

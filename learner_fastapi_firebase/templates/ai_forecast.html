@@ -7,8 +7,8 @@
     <div class="card ai-card">
         <div class="ai-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
             <div>
-                <h2 class="ai-title mb-1">AI Forecast Lite</h2>
-                <p class="ai-subtitle mb-0">Human-readable directional signal.</p>
+                <h2 class="ai-title mb-1">AI Forecast</h2>
+                <p class="ai-subtitle mb-0">A decision lens for your paper portfolio—not just a direction label.</p>
             </div>
             <form method="get" action="/ai-forecast" class="d-flex gap-2">
                 <input class="form-control" name="symbol" value="{{ symbol or '' }}" placeholder="Symbol">
@@ -26,11 +26,28 @@
 
             <div class="card mt-3 ai-inline-card">
                 <div class="card-body">
-                    <h5 class="mb-2">AI Forecast Coach</h5>
-                    <p class="mb-2">{{ forecast_ai.quick_take }}</p>
-                    <p class="text-muted mb-2"><strong>Explain Like I'm 15:</strong> {{ forecast_ai.explain_like_15 }}</p>
-                    <p class="text-muted mb-2"><strong>Portfolio Connection:</strong> {{ forecast_ai.portfolio_link }}</p>
-                    <ul class="mb-0">
+                    <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-3">
+                        <h5 class="mb-0">Nemotron's Read on {{ symbol }}</h5>
+                        <span class="ai-source-pill">
+                            {{ "NVIDIA Nemotron 3 Ultra" if forecast_ai.source == "nvidia_llm" else "Backup analysis" }}
+                        </span>
+                    </div>
+                    <div class="ai-insight-grid">
+                        <div class="ai-insight-block ai-insight-primary">
+                            <div class="context-label">The honest take</div>
+                            <p class="mb-0">{{ forecast_ai.quick_take }}</p>
+                        </div>
+                        <div class="ai-insight-block">
+                            <div class="context-label">In plain English</div>
+                            <p class="mb-0">{{ forecast_ai.explain_like_15 }}</p>
+                        </div>
+                        <div class="ai-insight-block">
+                            <div class="context-label">Why it matters to your portfolio</div>
+                            <p class="mb-0">{{ forecast_ai.portfolio_link }}</p>
+                        </div>
+                    </div>
+                    <div class="context-label mt-3 mb-2">What to watch next</div>
+                    <ul class="ai-action-list mb-0">
                         {% for row in forecast_ai.next_steps %}
                         <li>{{ row }}</li>
                         {% endfor %}
@@ -40,10 +57,28 @@
 
             <div class="card mt-3 ai-inline-card">
                 <div class="card-body">
-                    <h5 class="mb-2">Your Portfolio, Explained Simply</h5>
-                    <p class="mb-2">{{ portfolio_explainer.plain_english }}</p>
-                    <p class="text-muted mb-2"><strong>Analogy:</strong> {{ portfolio_explainer.analogy }}</p>
-                    <ul class="mb-0">
+                    <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-3">
+                        <h5 class="mb-0">What Nemotron Notices in Your Portfolio</h5>
+                        <span class="ai-source-pill">
+                            {{ "NVIDIA Nemotron 3 Ultra" if portfolio_explainer.source == "nvidia_llm" else "Backup analysis" }}
+                        </span>
+                    </div>
+                    <div class="ai-insight-grid">
+                        <div class="ai-insight-block ai-insight-primary">
+                            <div class="context-label">Portfolio diagnosis</div>
+                            <p class="mb-0">{{ portfolio_explainer.plain_english }}</p>
+                        </div>
+                        <div class="ai-insight-block">
+                            <div class="context-label">What stands out</div>
+                            <p class="mb-0">{{ portfolio_explainer.analogy }}</p>
+                        </div>
+                        <div class="ai-insight-block">
+                            <div class="context-label">What is driving the account</div>
+                            <p class="mb-0">{{ portfolio_explainer.why_it_moved }}</p>
+                        </div>
+                    </div>
+                    <div class="context-label mt-3 mb-2">Best next checks</div>
+                    <ul class="ai-action-list mb-0">
                         {% for row in portfolio_explainer.next_steps %}
                         <li>{{ row }}</li>
                         {% endfor %}

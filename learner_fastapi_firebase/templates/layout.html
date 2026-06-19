@@ -210,6 +210,28 @@ document.querySelectorAll("[data-market-btn]").forEach((btn) => {
         await setMarket(btn.getAttribute("data-market-btn"));
     });
 });
+
+{% if authenticated and not preview_mode %}
+async function checkOpenOrders() {
+    if (document.visibilityState !== "visible") return;
+    try {
+        const response = await fetch("/orders/check", { method: "POST", credentials: "include" });
+        if (!response.ok) return;
+        const result = await response.json();
+        if (result.filled > 0) {
+            const notice = document.createElement("div");
+            notice.className = "alert alert-success";
+            notice.innerHTML = `${result.filled} order${result.filled === 1 ? "" : "s"} executed on the latest price check. <a href="/orders" class="alert-link">View orders</a>`;
+            document.querySelector(".app-main-inner")?.prepend(notice);
+        }
+    } catch (_) {
+        // A temporary quote or network failure should not interrupt the page.
+    }
+}
+
+window.setTimeout(checkOpenOrders, 1500);
+window.setInterval(checkOpenOrders, 30000);
+{% endif %}
 </script>
 </body>
 </html>
