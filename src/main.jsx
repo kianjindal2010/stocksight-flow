@@ -4,7 +4,7 @@ import "./styles.css";
 
 const release = {
   url: import.meta.env.VITE_DOWNLOAD_URL?.trim() || "https://github.com/kianjindal2010/stocksight-flow/releases",
-  version: import.meta.env.VITE_RELEASE_VERSION?.trim() || "v1.0.3",
+  version: import.meta.env.VITE_RELEASE_VERSION?.trim() || "v1.0.4",
   size: import.meta.env.VITE_FILE_SIZE?.trim() || "58.4 MB",
   checksum: import.meta.env.VITE_SHA256?.trim() || "",
 };
