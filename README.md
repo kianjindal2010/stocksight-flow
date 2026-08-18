@@ -45,10 +45,10 @@ Only continue if all of these are true:
 - The file is named `StockSightLearner-Updated.exe`.
 - The SHA-256 checksum matches the checksum published for that release.
 
-For the current v1.0.12 release, the SHA-256 checksum is:
+For the current v1.0.13 release, the SHA-256 checksum is:
 
 ```text
-3864F9416C8DA75B9EB8E433B53FFD55623692256A346DA68F18FA68826EA4E7
+76D16A6BF7ED86EA019145A09233E1AA3755BBEFBBE5469FE14734A960D14ED7
 ```
 
 After verifying it, select **More info**, then **Run anyway** in the Windows notice.
