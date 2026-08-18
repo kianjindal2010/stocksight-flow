@@ -1,4 +1,6 @@
 # Secrets / local env
+.env
+**/.env
 *.pem
 *.key
 *service-account*.json
