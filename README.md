@@ -1,5 +1,7 @@
 # StockSight Learner
 
+![StockSight Flow logo](public/stocksight-logo.png)
+
 ![StockSight Learner preview](public/og.png)
 
 StockSight Learner is a Windows desktop app for people who want to learn market concepts, explore price movements, and build a calmer investing-learning routine.

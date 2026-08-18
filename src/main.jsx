@@ -43,7 +43,7 @@ function App() {
 
   return <>
     <header className="nav wrap">
-      <a href="#top" className="brand" aria-label="StockSight Learner home"><span className="brand-mark">↗</span> StockSight <em>Learner</em></a>
+      <a href="#top" className="brand" aria-label="StockSight Learner home"><img className="brand-mark" src="/stocksight-logo.png" alt="" /> StockSight <em>Learner</em></a>
       <nav aria-label="Main navigation"><a href="#inside">Inside the app</a><a href="#features">Features</a><a href="#install">Install</a><a href="#support">Help</a></nav>
       <DownloadButton className="nav-download" />
     </header>
@@ -82,7 +82,7 @@ function App() {
       <section id="support" className="support wrap"><div><p className="eyebrow">Need a hand?</p><h2>Simple help, without the runaround.</h2></div><div className="support-grid"><article><h3>Can’t find the download?</h3><p>Open the GitHub Releases page and choose the topmost release marked “Latest.”</p></article><article><h3>Windows blocked the file</h3><p>Check the SHA-256 value first. If it matches the release page, choose “More info” then “Run anyway.”</p></article><article><h3>Still stuck?</h3><p>Send a note to <a href="mailto:kian.jindal2010@gmail.com">kian.jindal2010@gmail.com</a> with a screenshot of the issue.</p></article></div></section>
     </main>
 
-    <footer><div className="wrap footer-inner"><p className="brand"><span className="brand-mark">↗</span> StockSight <em>Learner</em></p><p>For educational purposes only. StockSight Learner does not provide investment advice, recommendations, or guarantees of performance. Investing involves risk.</p><a href="https://github.com/kianjindal2010/stocksight-flow/releases" target="_blank" rel="noreferrer">GitHub Releases</a></div></footer>
+    <footer><div className="wrap footer-inner"><p className="brand"><img className="brand-mark" src="/stocksight-logo.png" alt="" /> StockSight <em>Learner</em></p><p>For educational purposes only. StockSight Learner does not provide investment advice, recommendations, or guarantees of performance. Investing involves risk.</p><a href="https://github.com/kianjindal2010/stocksight-flow/releases" target="_blank" rel="noreferrer">GitHub Releases</a></div></footer>
   </>;
 }
 
