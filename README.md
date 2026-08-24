@@ -1,74 +1,20 @@
-# StockSight Learner
+# StockSight Learner download site
 
-<p align="center">
-  <img src="public/stocksight-logo.png" width="110" alt="StockSight Learner logo">
-</p>
+This is the standalone Vercel landing page for the Windows desktop release.
 
-<p align="center">
-  A Windows desktop app for learning market concepts, practising paper trading, and building a calmer investing routine.
-</p>
+## Publish a release
 
-<p align="center">
-  <a href="https://github.com/kianjindal2010/stocksight-flow/releases"><strong>Download StockSight Learner for Windows</strong></a>
-</p>
+1. Upload `../dist/StockSightLearner-Updated.exe` to Gofile and copy its public HTTPS URL.
+2. Copy `.env.example` to `.env` and set the release values:
+   - `VITE_DOWNLOAD_URL` must be an `https://gofile.io/...` link.
+   - `VITE_RELEASE_VERSION` is the label shown on the page.
+   - `VITE_FILE_SIZE` is the download size shown on the page.
+   - `VITE_SHA256` must be the 64-character SHA-256 value of the uploaded EXE.
+3. In Vercel, import the `download-site` folder as a new project and add the same four variables under **Project Settings → Environment Variables**.
+4. Deploy. Vercel will provide the permanent `*.vercel.app` address.
 
-> StockSight Learner is for education and paper trading. It does not provide investment advice or guarantee investment results.
+The page deliberately hides every download button if the configured Gofile URL is missing or not valid. It shows the checksum only when it is a valid SHA-256 value.
 
-## Get the app
+## Local preview
 
-1. Open the [official Releases page](https://github.com/kianjindal2010/stocksight-flow/releases).
-2. Choose the release marked **Latest**.
-3. Download `StockSightLearner-Updated.exe`.
-4. Open your **Downloads** folder and double-click the file.
-
-The Releases page is the only official place to download StockSight Learner.
-
-## See the app
-
-| Learning dashboard | AI Trading Coach |
-| --- | --- |
-| ![StockSight Learner learning dashboard](public/screenshots/dashboard.jpg) | ![StockSight Learner AI Trading Coach Chat](public/screenshots/ai-chat-final.jpg) |
-
-| Risk Lab |
-| --- |
-| ![StockSight Learner Risk Lab](public/screenshots/risk-lab.jpg) |
-
-StockSight Learner brings together a market workspace, paper-trading tools, learning modules, journals, a Risk Lab, and an AI Trading Coach. The goal is to help you understand your choices before treating anything as a real-money decision.
-
-## Windows security notice
-
-Current releases are unsigned, so Windows may show **“Windows protected your PC”**. This is expected for a new independent app, but you should always verify the file before opening it.
-
-Only continue if all of these are true:
-
-- You downloaded the EXE from this repository's Releases page.
-- The file is named `StockSightLearner-Updated.exe`.
-- The SHA-256 checksum matches the checksum published for that release.
-
-For the current v1.0.13 release, the SHA-256 checksum is:
-
-```text
-76D16A6BF7ED86EA019145A09233E1AA3755BBEFBBE5469FE14734A960D14ED7
-```
-
-After verifying it, select **More info**, then **Run anyway** in the Windows notice.
-
-## Updating StockSight Learner
-
-When a new release appears:
-
-1. Return to the [Releases page](https://github.com/kianjindal2010/stocksight-flow/releases).
-2. Read the release notes.
-3. Download the newest Windows EXE and run it.
-
-Your account and learning data are connected through the app, so you do not need to create a new account just because you update the EXE.
-
-## Need help?
-
-Email [kian.jindal2010@gmail.com](mailto:kian.jindal2010@gmail.com) with:
-
-- A screenshot of the issue
-- What you clicked before it happened
-- Your Windows version, if you know it
-
-That makes it much easier to help quickly.
+Install dependencies with `npm install`, then use `npm run dev`.
