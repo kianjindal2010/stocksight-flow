@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import sys
+from html import escape
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -13,22 +15,32 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 
 from .api import build_api_router
 from .config import get_settings
-from .firebase import get_firestore_client, initialize_firebase, verify_id_token
+from .desktop_session import DesktopSessionStore
+from .firebase import get_firestore_client, initialize_firebase, verify_id_token, verify_id_token_with_api_key
 from .services.emailer import EmailService
 from .services.firestore_repo import FirestoreRepository
+from .services.appwrite_repo import AppwriteRepository
 from .services.ai_advisor import AIAdvisorService
 from .services.chat_context import build_ai_chat_context, build_ai_user_context
 from .services.learning_engine import LearningEngine
 from .services.market_data import MarketDataService
+from .services.pro_market_intel import ProMarketIntelService
 from .services import quiz_bank
 
 logger = logging.getLogger(__name__)
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+def _package_resource_root() -> Path:
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS) / "learner_fastapi_firebase"
+    return Path(__file__).resolve().parent.parent
+
+
+BASE_DIR = _package_resource_root()
 TEMPLATES_DIR = BASE_DIR / "templates"
 STATIC_DIR = BASE_DIR / "static"
 PREVIEW_UID = "public_preview_user"
@@ -299,12 +311,27 @@ def _quiz_report(questions: list[dict[str, Any]], selected_answers: dict[str, st
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    initialize_firebase(settings)
+    if not settings.appwrite_project_id:
+        initialize_firebase(settings)
 
     app = FastAPI(title="StockSight Learner (FastAPI + Firebase)")
     app.state.settings = settings
-    app.state.repo = FirestoreRepository(firestore_client=get_firestore_client(settings))
+    app.state.external_google_sessions = {}
+    app.state.desktop_session_store = DesktopSessionStore()
+    app.state.repo = (
+        AppwriteRepository(settings)
+        if settings.appwrite_project_id
+        else FirestoreRepository(firestore_client=get_firestore_client(settings))
+    )
     app.state.market_data = MarketDataService(cache_seconds=settings.market_data_cache_seconds)
+    app.state.pro_market_intel = ProMarketIntelService(
+        app.state.market_data,
+        appwrite_endpoint=settings.appwrite_endpoint,
+        appwrite_project_id=settings.appwrite_project_id,
+        appwrite_function_id=settings.appwrite_market_intel_function_id,
+        session_provider=getattr(app.state.repo, "get_session", lambda uid: ""),
+        cache_seconds=settings.market_data_cache_seconds,
+    )
     app.state.email_service = EmailService(settings)
     app.state.learning_engine = LearningEngine(app.state.repo, app.state.market_data)
     app.state.ai_advisor = AIAdvisorService(
@@ -313,6 +340,10 @@ def create_app() -> FastAPI:
         model=settings.nvidia_model,
         timeout_seconds=settings.ai_request_timeout_seconds,
         cache_seconds=settings.ai_cache_seconds,
+        appwrite_function_id=settings.appwrite_ai_function_id,
+        appwrite_endpoint=settings.appwrite_endpoint,
+        appwrite_project_id=settings.appwrite_project_id,
+        appwrite_session_provider=getattr(app.state.repo, "get_session", lambda uid: ""),
     )
 
     app.add_middleware(
@@ -323,6 +354,10 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.get("/health", include_in_schema=False)
+    async def desktop_health_check():
+        return {"status": "ok"}
+
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
@@ -332,20 +367,34 @@ def create_app() -> FastAPI:
         status_code = 500
         request.state.current_user = None
         token = _extract_token(request)
+        restored_session = False
+        if not token and settings.appwrite_project_id:
+            token = app.state.desktop_session_store.load()
+            restored_session = bool(token)
         if token:
             try:
-                if settings.firebase_use_memory and token.startswith("dev-token:"):
+                if settings.appwrite_project_id:
+                    from .appwrite import get_account
+                    decoded = get_account(settings, token)
+                elif settings.firebase_use_memory and token.startswith("dev-token:"):
                     _, uid, email = token.split(":", 2)
                     decoded = {"uid": uid, "email": email, "name": email.split("@")[0]}
                 else:
-                    decoded = verify_id_token(token)
+                    try:
+                        decoded = verify_id_token(token)
+                    except Exception:
+                        decoded = verify_id_token_with_api_key(token, settings.firebase_web_api_key)
                 uid = str(decoded.get("uid") or decoded.get("user_id") or "")
                 email = str(decoded.get("email") or "")
                 display_name = str(decoded.get("name") or "")
                 request.state.current_user = {"uid": uid, "email": email, "name": display_name}
                 if uid:
+                    if settings.appwrite_project_id:
+                        app.state.repo.set_session(uid, token)
                     app.state.repo.ensure_user(uid, email=email, display_name=display_name)
             except Exception:
+                if restored_session:
+                    app.state.desktop_session_store.clear()
                 request.state.current_user = None
         response = await call_next(request)
         status_code = int(getattr(response, "status_code", 500))
@@ -413,6 +462,11 @@ def create_app() -> FastAPI:
     def _preview_uid(request: Request) -> str | None:
         if _uid(request):
             return None
+        # Appwrite rows are private to a signed-in account.  The anonymous
+        # Firebase demo state therefore cannot be loaded in Appwrite mode;
+        # send desktop users directly to sign-in instead of rendering a 500.
+        if settings.appwrite_project_id:
+            return None
         if request.method not in {"GET", "HEAD"}:
             return None
         uid = _ensure_preview_user()
@@ -445,6 +499,7 @@ def create_app() -> FastAPI:
             "firebase_project_id": settings.firebase_project_id,
             "firebase_auth_domain": settings.firebase_auth_domain
             or (f"{settings.firebase_project_id}.firebaseapp.com" if settings.firebase_project_id else ""),
+            "appwrite_project_id": settings.appwrite_project_id,
         }
         if user:
             uid = user["uid"]
@@ -708,8 +763,13 @@ def create_app() -> FastAPI:
             )
         return history
 
-    def _save_chat_history(uid: str, market: str, messages: list[dict[str, Any]]) -> None:
-        app.state.repo.set_learning_doc(uid, _chat_doc_id(market), {"messages": messages[-30:]}, merge=False)
+    def _save_chat_history(uid: str, market: str, messages: list[dict[str, Any]]) -> bool:
+        try:
+            app.state.repo.set_learning_doc(uid, _chat_doc_id(market), {"messages": messages[-30:]}, merge=False)
+            return True
+        except Exception:
+            logger.exception("Could not save AI chat history for user %s", uid)
+            return False
 
     def _quizzes_page_payload(
         uid: str,
@@ -977,6 +1037,301 @@ def create_app() -> FastAPI:
                 },
             ),
         )
+
+    def _pro_workspace(uid: str) -> dict[str, Any]:
+        """Pro-only preferences and saved research live in their own document.
+
+        Existing Flow documents and watchlists are deliberately read-only here.
+        """
+        return app.state.repo.get_learning_doc(
+            uid,
+            "pro_workspace",
+            default={"research": {}, "queue": [], "preferences": {"density": "comfortable"}},
+        )
+
+    def _pro_shell_snapshot(symbol: str, market: str) -> dict[str, Any]:
+        """Return a no-I/O terminal shell; client-side panels hydrate it."""
+        return {
+            "symbol": symbol,
+            "market": market,
+            "generated_at": _utc_now_iso(),
+            "quote": {"symbol": symbol, "name": "Loading live quote…", "currency": "USD", "price": 0, "change_pct": 0},
+            "history": {"close": []}, "actions": {"dividends": [], "splits": []}, "news": [], "risk": {}, "forecast": {}, "benchmark": {}, "market_mood": {},
+            "technical": {"month_change_pct": 0, "observations": 0}, "sources": [], "filings": [], "company_facts": {"metrics": [], "health": {}}, "fundamentals": {}, "earnings": {}, "macro": {"fred": [], "bls": [], "treasury": []}, "ownership": {"official_filings": [], "insiders": []}, "analyst_context": {"recommendations": [], "price_target": {}, "peers": []}, "global_media": {"label": "Global media attention — context only", "articles": []}, "community": {"label": "Community Pulse — Unverified", "posts": [], "mention_count": 0}, "hosted_loaded": False,
+        }
+
+    def _pro_personal_context(uid: str, market: str, symbol: str) -> dict[str, Any]:
+        portfolio = app.state.repo.get_portfolio(uid, market)
+        normalized_symbol = symbol.upper()
+        positions = portfolio.get("positions") or []
+        position = next((row for row in positions if str(row.get("symbol", "")).upper() == normalized_symbol), None)
+        trades = [row for row in app.state.repo.list_trades(uid, market) if str(row.get("symbol", "")).upper() == normalized_symbol][:12]
+        orders = [row for row in app.state.repo.list_orders(uid, market) if str(row.get("symbol", "")).upper() == normalized_symbol][:12]
+        journal = []
+        for trade in trades[:8]:
+            trade_id = str(trade.get("id") or "")
+            if trade_id:
+                entry = app.state.repo.get_trade_journal(uid, trade_id)
+                if entry:
+                    journal.append(entry)
+        return {"portfolio": portfolio, "position": position, "trades": trades, "orders": orders, "journal": journal}
+
+    def _pro_ai_dossier(intel: dict[str, Any], personal: dict[str, Any], research: dict[str, Any]) -> dict[str, Any]:
+        """Keep every useful Pro signal while excluding account identity and raw social posts."""
+        news = [{key: item.get(key) for key in ("title", "link", "source", "published")} for item in (intel.get("news") or [])[:16] if isinstance(item, dict)]
+        filings = [{key: item.get(key) for key in ("form", "filed_at", "title", "url")} for item in (intel.get("filings") or [])[:12] if isinstance(item, dict)]
+        media = [{key: item.get(key) for key in ("title", "url", "domain", "published_at", "language")} for item in ((intel.get("global_media") or {}).get("articles") or [])[:8] if isinstance(item, dict)]
+        return {
+            "data_sources": intel.get("sources") or [],
+            "market": {"quote": intel.get("quote") or {}, "technical": intel.get("technical") or {}, "risk": intel.get("risk") or {}, "forecast": intel.get("forecast") or {}, "market_mood": intel.get("market_mood") or {}, "benchmark": intel.get("benchmark") or {}, "recent_closes": (intel.get("history") or {}).get("close", [])[-90:]},
+            "company": {"fundamentals": intel.get("fundamentals") or {}, "annual_earnings": (intel.get("earnings") or {}).get("annual", []), "upcoming_earnings": (intel.get("earnings") or {}).get("upcoming", []), "earnings_surprises": (intel.get("earnings") or {}).get("surprises", []), "sec_company_facts": (intel.get("company_facts") or {}).get("metrics", []), "financial_health": (intel.get("company_facts") or {}).get("health", {}), "official_filings": filings, "official_ownership_filings": (intel.get("ownership") or {}).get("official_filings", []), "insider_summaries": (intel.get("ownership") or {}).get("insiders", []), "corporate_actions": intel.get("actions") or {}},
+            "macro": intel.get("macro") or {"fred": [], "bls": []},
+            "analyst_context": intel.get("analyst_context") or {"recommendations": [], "price_target": {}, "peers": []},
+            "news_and_media": {"company_news": news, "global_media_context_only": media},
+            "community_context_only": {"label": (intel.get("community") or {}).get("label", "Community Pulse — Unverified"), "mention_count": (intel.get("community") or {}).get("mention_count", 0)},
+            "paper_portfolio": personal, "saved_research": research,
+        }
+
+    def _pro_catalyst_calendar(workspace: dict[str, Any]) -> list[dict[str, str]]:
+        rows: list[dict[str, str]] = []
+        for symbol, entry in (workspace.get("research") or {}).items():
+            if not isinstance(entry, dict):
+                continue
+            review_date = str(entry.get("review_date") or "").strip()
+            catalysts = str(entry.get("catalysts") or "").strip()
+            if review_date or catalysts:
+                rows.append(
+                    {
+                        "symbol": str(symbol).upper(),
+                        "date": review_date or "No review date",
+                        "detail": catalysts[:180] or "Review saved thesis and fresh source data.",
+                    }
+                )
+        rows.sort(key=lambda row: (row["date"] == "No review date", row["date"]))
+        return rows[:8]
+
+    def _pro_feed_items(workspace: dict[str, Any], rows: list[dict[str, Any]], portfolio: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        """Normalise the dashboard feed without persisting provider content.
+
+        User choices (saved/dismissed/review date) stay in the Pro workspace;
+        source articles and filings are re-fetched and remain attributable.
+        """
+        feed_state = workspace.get("feed") if isinstance(workspace.get("feed"), dict) else {}
+        dismissed = {str(value) for value in (feed_state.get("dismissed") or [])}
+        saved = feed_state.get("saved") if isinstance(feed_state.get("saved"), dict) else {}
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            symbol = str(row.get("symbol") or "").upper()
+            intel = row.get("intel") if isinstance(row.get("intel"), dict) else {}
+            quote = intel.get("quote") if isinstance(intel.get("quote"), dict) else {}
+            if quote:
+                identity = f"market:{symbol}:{str(intel.get('generated_at') or '')[:10]}"
+                items.append({"id": identity, "type": "market", "symbol": symbol, "title": f"{symbol} market snapshot", "detail": f"{quote.get('change_pct') or 0:+.2f}% · latest available session", "url": f"/pro/stocks/{symbol}", "source": "Yahoo Finance", "verified": True})
+            for macro_row in ((intel.get("macro") or {}).get("fred") or [])[:2]:
+                identity = f"macro:{macro_row.get('id') or macro_row.get('label')}:{macro_row.get('date')}"
+                items.append({"id": identity, "type": "macro", "symbol": "US", "title": macro_row.get("label") or "Macro release", "detail": f"{macro_row.get('value') if macro_row.get('value') is not None else '—'} {macro_row.get('unit') or ''} · {macro_row.get('date') or 'latest'}", "url": f"/pro/stocks/{symbol}", "source": "FRED", "verified": True})
+            for filing in (intel.get("filings") or [])[:4]:
+                identity = f"filing:{symbol}:{filing.get('accession') or filing.get('url') or filing.get('title')}"
+                items.append({"id": identity, "type": "filings", "symbol": symbol, "title": filing.get("title") or "SEC filing", "detail": f"{filing.get('form') or 'SEC'} · {filing.get('filed_at') or 'recent'}", "url": filing.get("url") or f"/pro/stocks/{symbol}", "source": "SEC EDGAR", "verified": True})
+            for earning in (intel.get("earnings") or {}).get("upcoming", [])[:2]:
+                identity = f"earnings:{symbol}:{earning.get('date')}"
+                items.append({"id": identity, "type": "earnings", "symbol": symbol, "title": f"{symbol} earnings event", "detail": earning.get("date") or "Upcoming event", "url": f"/pro/stocks/{symbol}", "source": "Alpha Vantage", "verified": True})
+            for item in (intel.get("news") or [])[:3]:
+                identity = f"news:{symbol}:{item.get('link') or item.get('title')}"
+                items.append({"id": identity, "type": "news", "symbol": symbol, "title": item.get("title") or "Market headline", "detail": item.get("published") or "Recent", "url": item.get("link") or f"/pro/stocks/{symbol}", "source": item.get("source") or "News", "verified": True})
+            mention_count = (intel.get("community") or {}).get("mention_count") or 0
+            if mention_count:
+                identity = f"community:{symbol}:{intel.get('generated_at', '')[:10]}"
+                items.append({"id": identity, "type": "community", "symbol": symbol, "title": f"{symbol}: {mention_count} community discussions", "detail": "Unverified discussion context only", "url": f"/pro/stocks/{symbol}", "source": "Reddit", "verified": False})
+        for position in ((portfolio or {}).get("positions") or []):
+            symbol = str(position.get("symbol") or "").upper()
+            if not symbol:
+                continue
+            identity = f"portfolio:{symbol}:{str(position.get('updated_at') or '')[:10]}"
+            items.append({"id": identity, "type": "portfolio", "symbol": symbol, "title": f"{symbol} portfolio exposure", "detail": f"{position.get('quantity') or 0} paper shares · value {position.get('market_value') or 0}", "url": f"/pro/stocks/{symbol}", "source": "Your paper portfolio", "verified": True})
+        for item in items:
+            item["saved"] = item["id"] in saved
+            item["review_date"] = str((saved.get(item["id"]) or {}).get("review_date") or "")
+        return [item for item in items if item["id"] not in dismissed][:60]
+
+    @app.get("/pro", response_class=HTMLResponse)
+    async def pro_dashboard(request: Request):
+        uid = _auth_or_redirect(request)
+        if isinstance(uid, RedirectResponse):
+            return uid
+        market = app.state.repo.get_selected_market(uid)
+        workspace = _pro_workspace(uid)
+        queue = [str(value).upper() for value in (workspace.get("queue") or []) if str(value).strip()][:8]
+        portfolio = app.state.repo.get_portfolio(uid, market)
+        positions = portfolio.get("positions") or []
+        # The terminal opens immediately. The intelligence-feed endpoint
+        # hydrates expensive market sources after the shell is interactive.
+        attention = [{"symbol": symbol, "news": [], "community": {}} for symbol in queue[:4]]
+        return templates.TemplateResponse(
+            request,
+            "pro_dashboard.html",
+            _context(
+                request,
+                {
+                    "workspace_mode": "pro",
+                    "pro_workspace": workspace,
+                    "research_queue": queue,
+                    "catalyst_calendar": _pro_catalyst_calendar(workspace),
+                    "portfolio": portfolio,
+                    "positions": positions,
+                    "community_attention": attention,
+                    "market_pulse": {"label": "Live market context", "summary": "Loading current market data in the background."},
+                    "benchmark": {"name": "Live market", "change_pct": 0},
+                    "feed_items": _pro_feed_items(workspace, attention, portfolio),
+                },
+            ),
+        )
+
+    @app.get("/pro/stocks/{symbol}", response_class=HTMLResponse)
+    async def pro_stock_page(request: Request, symbol: str):
+        uid = _auth_or_redirect(request)
+        if isinstance(uid, RedirectResponse):
+            return uid
+        market = app.state.repo.get_selected_market(uid)
+        resolved = app.state.market_data.resolve_symbol(symbol, market)
+        # Do not hold navigation hostage to price history or external APIs.
+        # The screen paints as a terminal shell and hydrates in the background.
+        intel = _pro_shell_snapshot(resolved, market)
+        # Older cached snapshots and test fixtures may not yet include the
+        # expanded Pro evidence layers. Keep the research page resilient.
+        intel.setdefault("company_facts", {"metrics": []})
+        intel.setdefault("macro", {"fred": [], "bls": []})
+        intel.setdefault("global_media", {"label": "Global media attention — context only", "articles": []})
+        workspace = _pro_workspace(uid)
+        research = (workspace.get("research") or {}).get(resolved, {})
+        return templates.TemplateResponse(
+            request,
+            "pro_stock.html",
+            _context(
+                request,
+                {
+                    "workspace_mode": "pro",
+                    "intel": intel,
+                    "research": research,
+                    "personal_context": {"position": None, "trades": [], "orders": [], "journal": [], "portfolio": {}},
+                },
+            ),
+        )
+
+    @app.post("/pro/stocks/{symbol}/research")
+    async def save_pro_research(request: Request, symbol: str, thesis: str = Form(""), catalysts: str = Form(""), review_date: str = Form(""), notes: str = Form("")):
+        uid = _auth_or_redirect(request)
+        if isinstance(uid, RedirectResponse):
+            return uid
+        workspace = _pro_workspace(uid)
+        research = dict(workspace.get("research") or {})
+        normalized_symbol = symbol.upper().strip()
+        research[normalized_symbol] = {
+            "thesis": thesis.strip()[:4000],
+            "catalysts": catalysts.strip()[:2500],
+            "review_date": review_date.strip()[:32],
+            "notes": notes.strip()[:6000],
+            "updated_at": _utc_now_iso(),
+        }
+        queue = [str(value).upper() for value in (workspace.get("queue") or []) if str(value).strip()]
+        if normalized_symbol not in queue:
+            queue.insert(0, normalized_symbol)
+        app.state.repo.set_learning_doc(uid, "pro_workspace", {"research": research, "queue": queue[:30]}, merge=True)
+        return _redirect(f"/pro/stocks/{normalized_symbol}", message="Pro research saved.")
+
+    @app.post("/pro/watchlist")
+    async def update_pro_watchlist(request: Request, symbol: str = Form(""), remove_symbol: str = Form("")):
+        uid = _auth_or_redirect(request)
+        if isinstance(uid, RedirectResponse):
+            return uid
+        workspace = _pro_workspace(uid)
+        values = [str(value).upper().strip() for value in (workspace.get("watchlist_symbols") or []) if str(value).strip()]
+        add_value = str(symbol or "").upper().strip()
+        remove_value = str(remove_symbol or "").upper().strip()
+        if remove_value:
+            values = [value for value in values if value != remove_value]
+        elif add_value and add_value not in values and len(add_value) <= 16:
+            values.insert(0, add_value)
+        app.state.repo.set_learning_doc(uid, "pro_workspace", {"watchlist_symbols": values[:40]}, merge=True)
+        return _redirect("/pro", message="Pro watchlist updated.")
+
+    @app.get("/api/pro/stocks/{symbol}/snapshot")
+    async def pro_stock_snapshot(request: Request, symbol: str):
+        uid = _uid(request)
+        if not uid:
+            raise HTTPException(status_code=401, detail="Sign in to refresh Pro research.")
+        market = app.state.repo.get_selected_market(uid)
+        resolved = app.state.market_data.resolve_symbol(symbol, market)
+        refresh = str(request.query_params.get("refresh") or "").lower() in {"1", "true", "yes"}
+        # This route is intentionally requested by the browser after the Pro
+        # shell has painted.  The provider work is synchronous (requests,
+        # Yahoo, Appwrite), so keep it off FastAPI's event loop.  Otherwise a
+        # slow source makes the entire local desktop app feel unclickable.
+        intel = await run_in_threadpool(
+            app.state.pro_market_intel.snapshot,
+            uid,
+            resolved,
+            market,
+            refresh=refresh,
+        )
+        intel["personal_context"] = await run_in_threadpool(_pro_personal_context, uid, market, resolved)
+        return JSONResponse(intel)
+
+    @app.get("/api/pro/intelligence-feed")
+    async def pro_intelligence_feed(request: Request):
+        uid = _uid(request)
+        if not uid:
+            raise HTTPException(status_code=401, detail="Sign in to refresh the Pro feed.")
+        market = app.state.repo.get_selected_market(uid)
+        workspace = _pro_workspace(uid)
+        symbols = [str(value).upper() for value in (workspace.get("watchlist_symbols") or workspace.get("queue") or []) if str(value).strip()][:8]
+        # The feed hydrates in the background, but it must not monopolise the
+        # ASGI event loop while optional sources time out or rate-limit.
+        snapshots = await run_in_threadpool(
+            _run_parallel,
+            {symbol: lambda symbol=symbol: app.state.pro_market_intel.snapshot(uid, symbol, market) for symbol in symbols},
+            4,
+        )
+        rows = [{"symbol": symbol, "intel": snapshots.get(symbol) or {}} for symbol in symbols]
+        portfolio = await run_in_threadpool(app.state.repo.get_portfolio, uid, market)
+        return JSONResponse({"items": _pro_feed_items(workspace, rows, portfolio), "generated_at": _utc_now_iso(), "symbols": symbols})
+
+    @app.post("/pro/feed-state")
+    async def update_pro_feed_state(request: Request, item_id: str = Form(""), action: str = Form(""), review_date: str = Form("")):
+        uid = _auth_or_redirect(request)
+        if isinstance(uid, RedirectResponse):
+            return uid
+        item_id = item_id.strip()[:700]
+        workspace = _pro_workspace(uid)
+        state = dict(workspace.get("feed") or {})
+        dismissed = [str(value) for value in (state.get("dismissed") or []) if str(value).strip()]
+        saved = dict(state.get("saved") or {})
+        if item_id:
+            if action == "dismiss" and item_id not in dismissed:
+                dismissed.append(item_id)
+                saved.pop(item_id, None)
+            elif action == "save":
+                saved[item_id] = {"review_date": review_date.strip()[:32], "saved_at": _utc_now_iso()}
+                dismissed = [value for value in dismissed if value != item_id]
+        app.state.repo.set_learning_doc(uid, "pro_workspace", {"feed": {"dismissed": dismissed[-160:], "saved": saved}}, merge=True)
+        return _redirect("/pro", message="Pro feed preference saved.")
+
+    @app.get("/api/pro/stocks/{symbol}/research-brief")
+    async def pro_research_brief(request: Request, symbol: str):
+        uid = _uid(request)
+        if not uid:
+            raise HTTPException(status_code=401, detail="Sign in to use Pro AI.")
+        market = app.state.repo.get_selected_market(uid)
+        resolved = app.state.market_data.resolve_symbol(symbol, market)
+        # Building an AI dossier includes the same provider bridge.  Run both
+        # blocking calls in workers so the rest of the desktop UI stays live.
+        intel = await run_in_threadpool(app.state.pro_market_intel.snapshot, uid, resolved, market)
+        personal = await run_in_threadpool(_pro_personal_context, uid, market, resolved)
+        # No email, account identity, or raw social posts belong in this dossier.
+        dossier = _pro_ai_dossier(intel, personal, (_pro_workspace(uid).get("research") or {}).get(resolved, {}))
+        action = str(request.query_params.get("action") or "analyse").lower().strip()
+        brief = await run_in_threadpool(app.state.ai_advisor.pro_research_brief, uid, market, resolved, dossier, action=action)
+        return JSONResponse(brief)
 
     @app.get("/api/ai/dashboard-brief")
     async def api_ai_dashboard_brief(request: Request):
@@ -1854,23 +2209,32 @@ def create_app() -> FastAPI:
         forecast = app.state.market_data.forecast_lite(symbol, market)
         portfolio = app.state.repo.get_portfolio(uid, market)
         user_context = _advisor_user_context(uid, market)
-        portfolio_explainer = app.state.ai_advisor.portfolio_explainer(
-            uid=uid,
-            market=market,
-            payload={"portfolio": portfolio, "focus_symbol": symbol, "user_context": user_context},
-        )
-        forecast_ai = app.state.ai_advisor.forecast_explainer(
-            uid=uid,
-            market=market,
-            symbol=symbol,
-            payload={
-                "forecast": forecast,
-                "portfolio": portfolio,
-                "market_mood": app.state.market_data.market_mood(market),
-                "headlines": app.state.market_data.stock_news(symbol, market, limit=3),
-                "user_context": user_context,
+        forecast_payload = {
+            "forecast": forecast,
+            "portfolio": portfolio,
+            "market_mood": app.state.market_data.market_mood(market),
+            "headlines": app.state.market_data.stock_news(symbol, market, limit=3),
+            "user_context": user_context,
+        }
+        ai_explanations = await run_in_threadpool(
+            _run_parallel,
+            {
+                "portfolio": lambda: app.state.ai_advisor.portfolio_explainer(
+                    uid=uid,
+                    market=market,
+                    payload={"portfolio": portfolio, "focus_symbol": symbol, "user_context": user_context},
+                ),
+                "forecast": lambda: app.state.ai_advisor.forecast_explainer(
+                    uid=uid,
+                    market=market,
+                    symbol=symbol,
+                    payload=forecast_payload,
+                ),
             },
+            2,
         )
+        portfolio_explainer = ai_explanations["portfolio"]
+        forecast_ai = ai_explanations["forecast"]
         return templates.TemplateResponse(
             request,
             "ai_forecast.html",
@@ -1881,6 +2245,7 @@ def create_app() -> FastAPI:
                     "forecast": forecast,
                     "forecast_ai": forecast_ai,
                     "portfolio_explainer": portfolio_explainer,
+                    "ai_model_label": app.state.ai_advisor.model_label,
                 },
             ),
         )
@@ -1907,6 +2272,7 @@ def create_app() -> FastAPI:
                     "chat_history": history,
                     "chat_starters": starters,
                     "ai_model": app.state.ai_advisor.model,
+                    "ai_model_label": app.state.ai_advisor.model_label,
                     "ai_enabled": app.state.ai_advisor.enabled,
                 },
             ),
@@ -1932,12 +2298,13 @@ def create_app() -> FastAPI:
             learning_engine=app.state.learning_engine,
             market_data=app.state.market_data,
         )
-        ai_response = app.state.ai_advisor.chat_reply(
-            uid=uid,
-            market=market,
-            message=text,
-            history=history,
-            context=context_payload,
+        ai_response = await run_in_threadpool(
+            app.state.ai_advisor.chat_reply,
+            uid,
+            market,
+            text,
+            history,
+            context_payload,
         )
         user_row = {"role": "user", "content": text, "created_at": _utc_now_iso()}
         assistant_row = {
@@ -1948,10 +2315,37 @@ def create_app() -> FastAPI:
             "model": str(ai_response.get("model") or ""),
         }
         updated = history + [user_row, assistant_row]
-        _save_chat_history(uid, market, updated)
+        history_saved = _save_chat_history(uid, market, updated)
         if request.headers.get("X-Requested-With") == "stocksight-chat":
-            return JSONResponse({"market": market, "message": assistant_row})
+            return JSONResponse({"market": market, "message": assistant_row, "history_saved": history_saved})
         return _redirect("/ai-chat")
+
+    @app.post("/ai-chat/compare")
+    async def ai_chat_compare(request: Request, message: str = Form("")):
+        uid = _auth_or_redirect(request)
+        if isinstance(uid, RedirectResponse):
+            return uid
+        text = str(message or "").strip()
+        if not text:
+            return JSONResponse({"detail": "Please type a comparison prompt."}, status_code=400)
+        market = app.state.repo.get_selected_market(uid)
+        history = _load_chat_history(uid, market)
+        context_payload = build_ai_chat_context(
+            uid=uid,
+            market=market,
+            repo=app.state.repo,
+            learning_engine=app.state.learning_engine,
+            market_data=app.state.market_data,
+        )
+        comparison = await run_in_threadpool(
+            app.state.ai_advisor.compare_chat_models,
+            uid,
+            market,
+            text,
+            history,
+            context_payload,
+        )
+        return JSONResponse({"market": market, **comparison})
 
     @app.post("/ai-chat/clear")
     async def ai_chat_clear(request: Request):
@@ -2093,9 +2487,69 @@ def create_app() -> FastAPI:
     async def login_page(request: Request):
         return templates.TemplateResponse(request, "login.html", _context(request))
 
+    @app.get("/auth/password-reset", response_class=HTMLResponse)
+    async def password_reset_page(request: Request):
+        return templates.TemplateResponse(request, "password_reset.html", _context(request))
+
+    @app.get("/auth/google/external", response_class=HTMLResponse)
+    async def external_google_login_page(request: Request):
+        state = request.query_params.get("state", "")
+        if not state or state not in app.state.external_google_sessions:
+            return HTMLResponse("This Google sign-in request is invalid or expired.", status_code=400)
+        if settings.appwrite_project_id:
+            callback = str(request.url_for("appwrite_google_callback"))
+            success = f"{callback}?state={state}"
+            failure = f"{callback}?state={state}&failed=1"
+            # Start this request in the user's browser, not through the local
+            # server. Appwrite writes OAuth state cookies on its own domain;
+            # forwarding only its redirect URL loses those cookies and makes
+            # Google's return request fail after account selection.
+            query = urlencode(
+                {
+                    "project": settings.appwrite_project_id,
+                    "success": success,
+                    "failure": failure,
+                }
+            )
+            oauth_url = f"{settings.appwrite_endpoint}/account/tokens/oauth2/google?{query}"
+            return RedirectResponse(oauth_url, status_code=302)
+        return templates.TemplateResponse(request, "external_google.html", _context(request, {"external_auth_state": state}))
+
+    @app.get("/auth/appwrite/google/callback", response_class=HTMLResponse, name="appwrite_google_callback")
+    async def appwrite_google_callback(request: Request):
+        state = request.query_params.get("state", "")
+        pending = app.state.external_google_sessions.get(state)
+        if not state or not pending:
+            return HTMLResponse("This Google sign-in request has expired. Return to StockSight and try again.", status_code=400)
+        if request.query_params.get("failed"):
+            detail = str(
+                request.query_params.get("error_description")
+                or request.query_params.get("error")
+                or "Appwrite did not complete the Google return step."
+            )
+            logger.warning("Appwrite Google sign-in failed: %s", detail)
+            pending.update(status="error", error=detail)
+            return HTMLResponse(f"Google sign-in could not finish: {escape(detail)}. Return to StockSight and try again.", status_code=400)
+        user_id = request.query_params.get("userId", "")
+        secret = request.query_params.get("secret", "")
+        if not user_id or not secret:
+            pending.update(status="error", error="Google did not return a valid sign-in token.")
+            return HTMLResponse("Google sign-in did not return a valid token. Return to StockSight and try again.", status_code=400)
+        try:
+            from .appwrite import create_session_from_token, get_account
+
+            _, session_token = create_session_from_token(settings, user_id, secret)
+            account = get_account(settings, session_token)
+            pending.update(status="ready", appwrite_session=session_token, account=account)
+        except Exception:
+            logger.exception("Appwrite Google sign-in could not be completed")
+            pending.update(status="error", error="Could not complete Google sign-in. Please try again.")
+            return HTMLResponse("Could not complete Google sign-in. Return to StockSight and try again.", status_code=400)
+        return HTMLResponse("<main style='font-family:Segoe UI,Arial,sans-serif;max-width:580px;margin:15vh auto;padding:32px'><h1>Google sign-in complete</h1><p>You can return to the StockSight app window.</p></main>")
+
     @app.get("/register", response_class=HTMLResponse)
     async def register_page(request: Request):
-        return templates.TemplateResponse(request, "register.html", _context(request))
+        return RedirectResponse(url="/login?mode=signup", status_code=303)
 
     @app.get("/instructions", response_class=HTMLResponse)
     async def instructions(request: Request):

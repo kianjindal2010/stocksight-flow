@@ -6,7 +6,7 @@ This is the standalone Vercel landing page for the Windows desktop release.
 
 1. Upload `../dist/StockSightLearner-Updated.exe` to Gofile and copy its public HTTPS URL.
 2. Copy `.env.example` to `.env` and set the release values:
-   - `VITE_DOWNLOAD_URL` must be an `https://gofile.io/...` link.
+   - `VITE_DOWNLOAD_URL` must be the official GitHub Releases page URL.
    - `VITE_RELEASE_VERSION` is the label shown on the page.
    - `VITE_FILE_SIZE` is the download size shown on the page.
    - `VITE_SHA256` must be the 64-character SHA-256 value of the uploaded EXE.

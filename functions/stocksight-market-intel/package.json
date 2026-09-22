@@ -1,0 +1,7 @@
+{
+  "name": "stocksight-pro-market-intel",
+  "private": true,
+  "type": "module",
+  "version": "2.0.0",
+  "engines": { "node": ">=22" }
+}

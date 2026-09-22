@@ -83,6 +83,8 @@ class FirestoreRepository:
 
     def _normalize_state(self, uid: str, state: dict[str, Any]) -> dict[str, Any]:
         defaults = self._uid_defaults(uid)
+        if not isinstance(state.get("user"), dict):
+            state["user"] = defaults["user"]
         state.setdefault("user", defaults["user"])
         user = state["user"]
         user.setdefault("profile", defaults["user"]["profile"])
@@ -103,7 +105,22 @@ class FirestoreRepository:
             "orders",
             "cash_flows",
         ]:
-            state.setdefault(key, {})
+            value = state.get(key)
+            if isinstance(value, dict):
+                continue
+            if isinstance(value, list):
+                # Older Firestore rows can represent an empty collection (or
+                # a collection of records) as a JSON array. The desktop app
+                # stores collections as maps, so retain every record while
+                # giving it a stable map key.
+                state[key] = {
+                    str(item.get("id") or item.get("$id") or index): item
+                    if isinstance(item, dict)
+                    else {"value": item}
+                    for index, item in enumerate(value)
+                }
+            else:
+                state[key] = {}
         return state
 
     def _state_ref(self, uid: str):

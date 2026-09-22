@@ -19,10 +19,28 @@ class GoogleLoginRequest(BaseModel):
     id_token: str
 
 
+class ExternalGoogleLoginRequest(BaseModel):
+    state: str
+    id_token: str
+
+
+class ExternalGoogleConsumeRequest(BaseModel):
+    state: str
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    user_id: str = Field(min_length=1)
+    secret: str = Field(min_length=1)
+    password: str = Field(min_length=8)
+
+
 class AuthResponse(BaseModel):
     uid: str
     email: str
     id_token: str | None = None
     refresh_token: str | None = None
     expires_in: int | None = None
-

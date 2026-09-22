@@ -1,21 +1,74 @@
-# StockSight Learner (FastAPI + Firebase)
+# StockSight Learner
 
-This repository now contains only the learner-focused Firebase/FastAPI stack in:
+<p align="center">
+  <img src="public/stocksight-logo.png" width="110" alt="StockSight Learner logo">
+</p>
 
-- `learner_fastapi_firebase/`
+<p align="center">
+  A Windows desktop app for learning market concepts, practising paper trading, and building a calmer investing routine.
+</p>
 
-## Run
+<p align="center">
+  <a href="https://github.com/kianjindal2010/stocksight-flow/releases"><strong>Download StockSight Learner for Windows</strong></a>
+</p>
 
-1. Install dependencies:
-   - `pip install -r requirements.txt`
-2. Configure env:
-   - root `.env` and/or `learner_fastapi_firebase/.env`
-3. Start:
-   - `uvicorn learner_fastapi_firebase.app.main:app --reload --host 127.0.0.1 --port 1000`
+> StockSight Learner is for education and paper trading. It does not provide investment advice or guarantee investment results.
 
-## Notes
+## Get the app
 
-- Firebase Auth is wired for email/password and Google sign-in.
-- Firestore is used when credentials are configured.
-- If Firestore credentials are missing, the app falls back to in-memory repository so local development still works.
+1. Open the [official Releases page](https://github.com/kianjindal2010/stocksight-flow/releases).
+2. Choose the release marked **Latest**.
+3. Download `StockSightLearner-Updated.exe`.
+4. Open your **Downloads** folder and double-click the file.
 
+The Releases page is the only official place to download StockSight Learner.
+
+## See the app
+
+| Learning dashboard | AI Trading Coach |
+| --- | --- |
+| ![StockSight Learner learning dashboard](public/screenshots/dashboard.jpg) | ![StockSight Learner AI Trading Coach Chat](public/screenshots/ai-chat-final.jpg) |
+
+| Risk Lab |
+| --- |
+| ![StockSight Learner Risk Lab](public/screenshots/risk-lab.jpg) |
+
+StockSight Learner brings together a market workspace, paper-trading tools, learning modules, journals, a Risk Lab, and an AI Trading Coach. The goal is to help you understand your choices before treating anything as a real-money decision.
+
+## Windows security notice
+
+Current releases are unsigned, so Windows may show **“Windows protected your PC”**. This is expected for a new independent app, but you should always verify the file before opening it.
+
+Only continue if all of these are true:
+
+- You downloaded the EXE from this repository's Releases page.
+- The file is named `StockSightLearner-Updated.exe`.
+- The SHA-256 checksum matches the checksum published for that release.
+
+For the current v1.0.14 release, the SHA-256 checksum is:
+
+```text
+F5D8C07A0CAE63F5536AF483B625061180B4E0BF2E97D8D9010C3A396851AF02
+```
+
+After verifying it, select **More info**, then **Run anyway** in the Windows notice.
+
+## Updating StockSight Learner
+
+When a new release appears:
+
+1. Return to the [Releases page](https://github.com/kianjindal2010/stocksight-flow/releases).
+2. Read the release notes.
+3. Download the newest Windows EXE and run it.
+
+Your account and learning data are connected through the app, so you do not need to create a new account just because you update the EXE.
+
+## Need help?
+
+Email [kian.jindal2010@gmail.com](mailto:kian.jindal2010@gmail.com) with:
+
+- A screenshot of the issue
+- What you clicked before it happened
+- Your Windows version, if you know it
+
+That makes it much easier to help quickly.

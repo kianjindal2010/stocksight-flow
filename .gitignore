@@ -12,3 +12,11 @@ __pycache__/
 .venv/
 learner_fastapi_firebase/.venv/
 learner_fastapi_firebase/pytest-cache-files-*/
+
+# Generated packages and local deployment archives
+node_modules/
+build/
+dist/
+test-artifacts/
+*.tar.gz
+.agents/

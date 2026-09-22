@@ -1,0 +1,9 @@
+{
+  "name": "stocksight-legacy-migration",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "dependencies": {
+    "node-appwrite": "^21.0.0"
+  }
+}

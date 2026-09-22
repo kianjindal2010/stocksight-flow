@@ -68,6 +68,27 @@ def verify_id_token(id_token: str) -> dict[str, Any]:
     return auth.verify_id_token(id_token, check_revoked=False)
 
 
+def verify_id_token_with_api_key(id_token: str, api_key: str) -> dict[str, Any]:
+    """Validate a Firebase ID token through Identity Toolkit when Admin SDK verification is unavailable."""
+    if not api_key:
+        raise FirebaseAuthError("Firebase web API key is not configured.")
+    resp = requests.post(
+        _identity_toolkit_url("accounts:lookup", api_key),
+        json={"idToken": id_token},
+        timeout=12,
+    )
+    data = resp.json()
+    if resp.status_code >= 400 or not data.get("users"):
+        message = data.get("error", {}).get("message", "Invalid Firebase ID token")
+        raise FirebaseAuthError(message)
+    user = data["users"][0]
+    return {
+        "uid": user.get("localId", ""),
+        "email": user.get("email", ""),
+        "name": user.get("displayName", ""),
+    }
+
+
 def _identity_toolkit_url(path: str, api_key: str) -> str:
     return f"https://identitytoolkit.googleapis.com/v1/{path}?key={api_key}"
 

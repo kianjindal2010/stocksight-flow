@@ -13,7 +13,7 @@
             <div class="d-flex align-items-center gap-2 flex-wrap">
                 <span class="chat-model-pill" title="{{ ai_model }}">
                     <span class="chat-status-dot {% if not ai_enabled %}is-offline{% endif %}"></span>
-                    {% if ai_enabled %}NVIDIA Nemotron 3 Ultra{% else %}Local backup coach{% endif %}
+                    {% if ai_enabled %}{{ ai_model_label }}{% else %}Built-in learning coach{% endif %}
                 </span>
                 <form method="post" action="/ai-chat/clear">
                     <button class="btn btn-outline-secondary btn-sm" type="submit">Clear Chat</button>
@@ -31,7 +31,11 @@
                             <div class="chat-content">{{ row.content }}</div>
                             {% if row.role == "assistant" and row.source %}
                             <div class="chat-meta">
-                                {{ "NVIDIA Nemotron 3 Ultra" if row.source == "nvidia_llm" else "Backup coach" }}
+                                {% if row.source in ["nvidia_llm", "hosted_nvidia_llm"] %}
+                                    {{ "DeepSeek V4 Pro" if "deepseek-v4-pro" in row.model else "NVIDIA Nemotron 3 Ultra" }}
+                                {% else %}
+                                    Backup coach
+                                {% endif %}
                             </div>
                             {% endif %}
                         </div>
@@ -60,7 +64,10 @@
                     placeholder="Ask the AI coach anything about your paper trades..."
                     required
                 ></textarea>
-                <button class="btn btn-primary chat-send-button" id="aiChatSend" type="submit">Send</button>
+                <div class="chat-composer-actions">
+                    <button class="btn btn-outline-primary chat-compare-button" id="aiChatCompare" type="button">Compare models</button>
+                    <button class="btn btn-primary chat-send-button" id="aiChatSend" type="submit">Send</button>
+                </div>
             </form>
             <div class="chat-disclaimer">Enter to send · Shift+Enter for a new line · Educational paper-trading guidance only</div>
         </div>
@@ -73,13 +80,14 @@
     const form = document.getElementById("aiChatForm");
     const input = document.getElementById("aiChatInput");
     const sendButton = document.getElementById("aiChatSend");
-    if (!chatWindow || !form || !input || !sendButton) return;
+    const compareButton = document.getElementById("aiChatCompare");
+    if (!chatWindow || !form || !input || !sendButton || !compareButton) return;
 
     const scrollToLatest = () => {
         chatWindow.scrollTop = chatWindow.scrollHeight;
     };
 
-    const addBubble = (role, content, source = "") => {
+    const addBubble = (role, content, source = "", model = "") => {
         document.getElementById("chatEmptyState")?.remove();
         const row = document.createElement("div");
         row.className = `chat-row ${role === "user" ? "chat-user" : "chat-assistant"}`;
@@ -97,13 +105,58 @@
         if (role === "assistant" && source) {
             const meta = document.createElement("div");
             meta.className = "chat-meta";
-            meta.textContent = source === "nvidia_llm" ? "NVIDIA Nemotron 3 Ultra" : "Backup coach";
+            meta.textContent = (source === "nvidia_llm" || source === "hosted_nvidia_llm")
+                ? (model.includes("deepseek-v4-pro") ? "DeepSeek V4 Pro" : "NVIDIA Nemotron 3 Ultra")
+                : "Backup coach";
             bubble.append(meta);
         }
         row.append(bubble);
         chatWindow.append(row);
         scrollToLatest();
         return row;
+    };
+
+    const addSaveNotice = () => {
+        const notice = document.createElement("div");
+        notice.className = "chat-save-notice";
+        notice.textContent = "This reply is available, but the conversation could not be saved to your account. Try again after checking your connection.";
+        chatWindow.append(notice);
+        scrollToLatest();
+    };
+
+    const addComparison = (results) => {
+        const row = document.createElement("div");
+        row.className = "chat-row chat-assistant";
+        const bubble = document.createElement("div");
+        bubble.className = "chat-bubble chat-comparison-bubble";
+        const roleLabel = document.createElement("div");
+        roleLabel.className = "chat-role";
+        roleLabel.textContent = "Same prompt · two models";
+        const grid = document.createElement("div");
+        grid.className = "chat-comparison-grid";
+
+        (results || []).forEach((result) => {
+            const card = document.createElement("section");
+            card.className = `chat-model-result ${result.status === "ok" ? "is-ready" : "is-unavailable"}`;
+            const header = document.createElement("div");
+            header.className = "chat-model-result-header";
+            const name = document.createElement("strong");
+            name.textContent = result.label || result.model || "Model";
+            const timing = document.createElement("span");
+            const seconds = Math.round(Number(result.latency_ms || 0) / 100) / 10;
+            timing.textContent = result.status === "ok" ? `${seconds}s` : `Unavailable · ${seconds}s`;
+            header.append(name, timing);
+            const content = document.createElement("div");
+            content.className = "chat-content";
+            content.textContent = result.reply || "No response returned.";
+            card.append(header, content);
+            grid.append(card);
+        });
+
+        bubble.append(roleLabel, grid);
+        row.append(bubble);
+        chatWindow.append(row);
+        scrollToLatest();
     };
 
     form.addEventListener("submit", async (event) => {
@@ -115,6 +168,7 @@
         input.value = "";
         input.disabled = true;
         sendButton.disabled = true;
+        compareButton.disabled = true;
         sendButton.textContent = "Thinking";
         const pending = addBubble("assistant", "Thinking…");
         pending.classList.add("chat-pending");
@@ -128,19 +182,71 @@
                 headers: { "X-Requested-With": "stocksight-chat" },
                 body,
             });
+            if (response.redirected && new URL(response.url).pathname === "/login") {
+                throw new Error("Log in to use the live AI coach.");
+            }
             const payload = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(payload.detail || "The coach could not answer right now.");
 
             pending.remove();
             const reply = payload.message || {};
-            addBubble("assistant", reply.content || "I could not form a response. Please try again.", reply.source || "");
+            addBubble(
+                "assistant",
+                reply.content || "I could not form a response. Please try again.",
+                reply.source || "",
+                reply.model || "",
+            );
+            if (payload.history_saved === false) addSaveNotice();
         } catch (error) {
             pending.querySelector(".chat-content").textContent = error.message || "The coach could not answer right now.";
             pending.classList.remove("chat-pending");
         } finally {
             input.disabled = false;
             sendButton.disabled = false;
+            compareButton.disabled = false;
             sendButton.textContent = "Send";
+            input.focus();
+            scrollToLatest();
+        }
+    });
+
+    compareButton.addEventListener("click", async () => {
+        const text = input.value.trim();
+        if (!text || compareButton.disabled) return;
+
+        addBubble("user", text);
+        input.value = "";
+        input.disabled = true;
+        sendButton.disabled = true;
+        compareButton.disabled = true;
+        compareButton.textContent = "Comparing…";
+        const pending = addBubble("assistant", "Sending the same context to both models…");
+        pending.classList.add("chat-pending");
+
+        try {
+            const body = new FormData();
+            body.append("message", text);
+            const response = await fetch("/ai-chat/compare", {
+                method: "POST",
+                credentials: "include",
+                headers: { "X-Requested-With": "stocksight-chat" },
+                body,
+            });
+            if (response.redirected && new URL(response.url).pathname === "/login") {
+                throw new Error("Log in to compare the live models.");
+            }
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(payload.detail || "The comparison could not run right now.");
+            pending.remove();
+            addComparison(payload.results || []);
+        } catch (error) {
+            pending.querySelector(".chat-content").textContent = error.message || "The comparison could not run right now.";
+            pending.classList.remove("chat-pending");
+        } finally {
+            input.disabled = false;
+            sendButton.disabled = false;
+            compareButton.disabled = false;
+            compareButton.textContent = "Compare models";
             input.focus();
             scrollToLatest();
         }

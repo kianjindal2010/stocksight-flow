@@ -74,6 +74,52 @@ def test_web_ai_chat_supports_async_response_and_saves_model_metadata(client, au
     assert history[-1]["model"] == "nvidia/nemotron-3-ultra-550b-a55b"
 
 
+def test_web_ai_chat_returns_reply_when_history_save_fails(client, auth_headers):
+    def fake_chat_reply(uid, market, message, history=None, context=None):  # type: ignore[no-untyped-def]
+        return {"reply": "Your reply still appears.", "source": "test", "generated_at": "now", "model": "test"}
+
+    def fail_to_save(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise RuntimeError("temporary Appwrite outage")
+
+    client.app.state.ai_advisor.chat_reply = fake_chat_reply  # type: ignore[assignment]
+    client.app.state.repo.set_learning_doc = fail_to_save  # type: ignore[assignment]
+    headers = {**auth_headers, "X-Requested-With": "stocksight-chat"}
+
+    response = client.post("/ai-chat", headers=headers, data={"message": "Will this reply survive?"})
+
+    assert response.status_code == 200
+    assert response.json()["message"]["content"] == "Your reply still appears."
+    assert response.json()["history_saved"] is False
+
+
+def test_web_ai_chat_model_comparison_uses_full_context(client, auth_headers):
+    captured = {}
+
+    def fake_compare(uid, market, message, history=None, context=None):  # type: ignore[no-untyped-def]
+        captured["context"] = context or {}
+        captured["message"] = message
+        return {
+            "prompt": message,
+            "results": [
+                {"model": "nvidia/model-a", "label": "Model A", "status": "ok", "reply": "A", "latency_ms": 10},
+                {"model": "deepseek-ai/model-b", "label": "Model B", "status": "ok", "reply": "B", "latency_ms": 20},
+            ],
+        }
+
+    client.app.state.ai_advisor.compare_chat_models = fake_compare  # type: ignore[assignment]
+    response = client.post(
+        "/ai-chat/compare",
+        headers=auth_headers,
+        data={"message": "Which answer is better?"},
+    )
+
+    assert response.status_code == 200
+    assert [row["reply"] for row in response.json()["results"]] == ["A", "B"]
+    assert captured["message"] == "Which answer is better?"
+    assert captured["context"]["access_mode"] == "full"
+    assert "holdings_intel" in captured["context"]
+
+
 def test_dashboard_ai_receives_user_tradebook_context(client, auth_headers):
     captured: dict = {}
 

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Continue with Google | StockSight</title>
+    <style>
+        :root { color-scheme: light; font-family: Segoe UI, Arial, sans-serif; }
+        body { min-height: 100vh; margin: 0; display: grid; place-items: center; background: #f4f7fb; color: #0f172a; }
+        main { width: min(420px, calc(100% - 40px)); padding: 32px; background: #fff; border: 1px solid #dbe3ef; border-radius: 16px; box-shadow: 0 18px 50px rgba(15, 23, 42, .12); text-align: center; }
+        h1 { margin: 0 0 10px; font-size: 26px; }
+        p { color: #526173; line-height: 1.5; }
+        button { border: 0; border-radius: 9px; padding: 12px 18px; background: #2563eb; color: #fff; font-weight: 600; cursor: pointer; }
+        button:disabled { cursor: wait; opacity: .65; }
+        #message { min-height: 24px; margin-top: 18px; color: #b42318; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>Continue to StockSight</h1>
+        <p>Google sign-in is opening in your regular browser. After it succeeds, return to the StockSight app window.</p>
+        <button id="googleButton" type="button">Continue with Google</button>
+        <div id="message" role="status" aria-live="polite"></div>
+    </main>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+        import { getAuth, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+
+        const message = document.getElementById("message");
+        const button = document.getElementById("googleButton");
+        const state = {{ external_auth_state|tojson }};
+        const firebaseApp = initializeApp({
+            apiKey: {{ firebase_web_api_key|tojson }},
+            projectId: {{ firebase_project_id|tojson }},
+            authDomain: {{ firebase_auth_domain|tojson }},
+        });
+        const auth = getAuth(firebaseApp);
+
+        button.addEventListener("click", async () => {
+            button.disabled = true;
+            message.textContent = "Opening Google sign-in...";
+            try {
+                const result = await signInWithPopup(auth, new GoogleAuthProvider());
+                const response = await fetch("/api/auth/external/complete", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ state, id_token: await result.user.getIdToken() }),
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(data.detail || "Could not finish Google sign-in.");
+                message.style.color = "#16794c";
+                message.textContent = "Signed in. Return to the StockSight app window.";
+            } catch (error) {
+                button.disabled = false;
+                message.textContent = error.message || String(error);
+            }
+        });
+    </script>
+</body>
+</html>

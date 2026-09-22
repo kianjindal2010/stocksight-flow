@@ -1,0 +1,134 @@
+{% extends "layout.html" %}
+
+{% block title %} — {{ intel.symbol }} Pro Research{% endblock %}
+
+{% block main %}
+<section class="pro-stock-hero reveal-up">
+    <a class="pro-back" href="/pro">← Pro desk</a>
+    <div class="pro-stock-title">
+        <div><p class="pro-eyebrow">{{ intel.market }} EQUITY / RESEARCH WORKSPACE</p><h2>{{ intel.symbol }} <span data-live-name>{{ intel.quote.name or "" }}</span></h2></div>
+        <div class="pro-price"><strong data-live-price>{{ intel.quote.currency or "USD" }} {{ "%.2f"|format(intel.quote.price or 0) }}</strong><b data-live-change class="{% if (intel.quote.change_pct or 0) >= 0 %}performance-up{% else %}performance-down{% endif %}">{{ "%+.2f"|format(intel.quote.change_pct or 0) }}%</b><small data-live-quote-status>Loading live quote</small></div>
+    </div>
+</section>
+
+<section class="pro-live-research reveal-up" id="proLiveResearch" data-symbol="{{ intel.symbol }}">
+    <div class="pro-live-heading"><div><p class="pro-eyebrow">PROGRESSIVE RESEARCH LAYER</p><h3>Verified evidence is loading.</h3><p>Price and portfolio context are ready. The richer source-labelled research arrives without holding up the workspace.</p></div><button type="button" data-intel-refresh>Refresh sources ↻</button></div>
+    <div class="pro-live-status" data-intel-status aria-live="polite">Preparing official filings, financials, ownership, analyst and macro context…</div>
+    <div class="pro-live-grid" data-intel-grid>
+        <article class="pro-panel"><div class="pro-panel-kicker">Official financials</div><h3>Awaiting SEC data</h3><p>Annual financial health will appear here when the hosted source responds.</p></article>
+        <article class="pro-panel"><div class="pro-panel-kicker">Analyst & peers</div><h3>Awaiting optional context</h3><p>Finnhub is optional; this panel clearly states its availability.</p></article>
+        <article class="pro-panel"><div class="pro-panel-kicker">Ownership & insiders</div><h3>Awaiting records</h3><p>Official ownership forms and provider summaries remain source-labelled.</p></article>
+    </div>
+</section>
+
+<section class="pro-metrics pro-metrics-six reveal-up">
+    <div data-metric="range"><span>52-week position</span><strong>—</strong><small>Loading range…</small></div>
+    <div data-metric="momentum"><span>1-month momentum</span><strong>—</strong><small>Loading daily closes…</small></div>
+    <div data-metric="volume"><span>Volume</span><strong>—</strong><small>Loading quote…</small></div>
+    <div data-metric="dividend"><span>Dividend yield</span><strong>—</strong><small>Provider-reported where available</small></div>
+    <div data-metric="pe"><span>Valuation / P-E</span><strong>—</strong><small>Loading sector…</small></div>
+    <div data-metric="cap"><span>Market cap</span><strong>—</strong><small>Loading quote…</small></div>
+</section>
+
+<section class="pro-stock-grid">
+    <article class="pro-panel pro-evidence reveal-up">
+        <div class="pro-panel-kicker">Evidence timeline</div>
+        <h3>News & catalysts</h3>
+        <div class="pro-timeline" data-live-news>
+        {% for item in intel.news %}
+            <a href="{{ item.link }}" target="_blank" rel="noopener"><small>{{ item.source or "News" }} · {{ item.published or "Recent" }}</small><strong>{{ item.title }}</strong><span>↗</span></a>
+        {% else %}<p>News sources are temporarily unavailable. This does not change the rest of the research snapshot.</p>{% endfor %}
+        </div>
+    </article>
+    <article class="pro-panel pro-personal reveal-up" data-live-personal>
+        <div class="pro-panel-kicker">Your paper portfolio</div>
+        <h3>Exposure & history</h3>
+        {% if personal_context.position %}
+        <div class="pro-position"><strong>{{ personal_context.position.quantity or 0 }} shares</strong><span>Average {{ "%.2f"|format(personal_context.position.avg_price or 0) }}</span><span>Value {{ "%.2f"|format(personal_context.position.market_value or 0) }}</span></div>
+        {% else %}<p>No open Flow paper position in {{ intel.symbol }}.</p>{% endif %}
+        <p class="pro-mini-copy">{{ personal_context.trades|length }} recorded trade{{ '' if personal_context.trades|length == 1 else 's' }} · {{ personal_context.orders|length }} open or historical order{{ '' if personal_context.orders|length == 1 else 's' }}</p>
+    </article>
+    <article class="pro-panel pro-community reveal-up">
+        <div class="pro-panel-kicker">Community Pulse <b>Unverified</b></div>
+        <h3>Discussion, not proof.</h3>
+        <p>{{ intel.community.mention_count or 0 }} recent linked discussion{{ '' if (intel.community.mention_count or 0) == 1 else 's' }} were available from configured official sources.</p>
+        {% for item in intel.community.posts[:3] %}<a href="{{ item.url }}" target="_blank" rel="noopener">r/{{ item.subreddit }} · {{ item.title }} ↗</a>{% endfor %}
+    </article>
+</section>
+
+<section class="pro-stock-grid pro-lower-grid">
+    <article class="pro-panel pro-filings reveal-up"><div class="pro-panel-kicker">Official records</div><h3>SEC filings</h3>{% for item in intel.filings[:6] %}<a href="{{ item.url }}" target="_blank" rel="noopener"><small>{{ item.form }} · {{ item.filed_at }}</small><strong>{{ item.title or item.form }}</strong></a>{% else %}<p>Official filing coverage is available for supported US symbols after the optional source is configured.</p>{% endfor %}</article>
+    <article class="pro-panel pro-notes reveal-up"><div class="pro-panel-kicker">Your research record</div><h3>Thesis, catalysts & review</h3><form action="/pro/stocks/{{ intel.symbol }}/research" method="post"><label>Thesis<textarea name="thesis" placeholder="Why does this idea exist?">{{ research.thesis or '' }}</textarea></label><label>Catalysts to watch<textarea name="catalysts" placeholder="Earnings, filings, product events…">{{ research.catalysts or '' }}</textarea></label><label>Review date<input type="date" name="review_date" value="{{ research.review_date or '' }}"></label><label>Research notes<textarea name="notes" placeholder="Evidence, questions, and what could change your view.">{{ research.notes or '' }}</textarea></label><button type="submit">Save research record →</button></form></article>
+</section>
+
+<section class="pro-stock-grid pro-actions-grid">
+    <article class="pro-panel reveal-up"><div class="pro-panel-kicker">Capital return & events</div><h3>Dividends & splits</h3><div class="pro-timeline">{% for item in intel.actions.get('dividends', [])[:4] %}<div><small>Dividend · {{ item.date }}</small><strong>{{ "%.4f"|format(item.amount or 0) }} per share</strong></div>{% else %}<p>No recent dividend events were returned.</p>{% endfor %}{% for item in intel.actions.get('splits', [])[:4] %}<div><small>Split · {{ item.date }}</small><strong>{{ item.ratio }}× split ratio</strong></div>{% endfor %}</div></article>
+    <article class="pro-panel reveal-up"><div class="pro-panel-kicker">Financial-health trend</div><h3>Earnings context</h3><div class="pro-timeline">{% for item in intel.earnings.get('annual', [])[:4] %}<div><small>{{ item.fiscalDateEnding or "Annual period" }}</small><strong>Reported EPS {{ item.reportedEPS or "—" }}</strong></div>{% else %}<p>Configure the optional Alpha Vantage source to add free earnings history.</p>{% endfor %}</div></article>
+</section>
+
+<section class="pro-stock-grid pro-lower-grid">
+    <article class="pro-panel pro-financial-history reveal-up"><div class="pro-panel-kicker">Official XBRL history</div><h3>Financial trend</h3><p class="pro-mini-copy">Annual 10-K values from SEC company facts. Figures retain their reported units.</p><div class="pro-fact-grid">{% for metric in intel.company_facts.metrics[:6] %}{% set latest = metric.points[-1] %}<div><small>{{ metric.label }}</small><strong>{% if metric.unit == 'USD' %}${{ "{:,}".format(latest.value|int) }}{% elif metric.unit == 'USD/shares' %}${{ "%.2f"|format(latest.value) }}{% else %}{{ "{:,}".format(latest.value|int) }}{% endif %}</strong><span>{{ latest.period }} · {{ latest.end }}</span></div>{% else %}<p>SEC Company Facts are available for supported US issuers after the official source refreshes.</p>{% endfor %}</div></article>
+    <article class="pro-panel pro-macro-context reveal-up"><div class="pro-panel-kicker">Macro context</div><h3>Rates, inflation & labour</h3><div class="pro-macro-list">{% for row in intel.macro.fred %}<div><small>FRED · {{ row.label }}</small><strong>{{ row.value if row.value is not none else '—' }} {{ row.unit }}</strong><span>{{ row.date }}</span></div>{% endfor %}{% for row in intel.macro.bls %}<div><small>BLS · {{ row.label }}</small><strong>{{ row.value or '—' }}</strong><span>{{ row.period }}</span></div>{% endfor %}{% if not intel.macro.fred and not intel.macro.bls %}<p>Macro sources are temporarily unavailable.</p>{% endif %}</div>{% if intel.macro.fred %}<p class="pro-attribution">This product uses the FRED® API but is not endorsed or certified by the Federal Reserve Bank of St. Louis.</p>{% endif %}</article>
+</section>
+
+<section class="pro-panel pro-media-context reveal-up" data-live-media><div class="pro-panel-kicker">Global media attention <b>Context only</b></div><h3>Worldwide coverage is not evidence.</h3><p class="pro-mini-copy">GDELT links are included for research breadth. Open the original reporting; media volume or tone never changes an AI stance on its own.</p><div class="pro-timeline"><p>Loading global-media context…</p></div></section>
+
+<section class="pro-panel pro-ai-brief reveal-up" id="proAiBrief" data-symbol="{{ intel.symbol }}">
+    <div><div class="pro-panel-kicker">Pro AI Copilot / source-aware analysis</div><h3>AI Research Brief</h3><p class="pro-ai-intro">Turn this source-labelled dossier into a paper-trading research plan. The AI will state what it used, what remains unknown, and will keep community discussion separate.</p></div>
+    <div class="pro-ai-actions"><div class="pro-ai-action-grid"><button type="button" data-pro-brief data-action="analyse">Analyse this stock</button><button type="button" data-pro-brief data-action="challenge">Challenge my thesis</button><button type="button" data-pro-brief data-action="portfolio">Compare to portfolio</button><button type="button" data-pro-brief data-action="filings">Summarise filings</button><button type="button" data-pro-brief data-action="community">Explain community</button><button type="button" data-pro-brief data-action="plan">Paper-trade plan</button></div><span>Hosted AI · educational paper trading only</span></div>
+    <div class="pro-ai-output" aria-live="polite"></div>
+</section>
+
+<section class="pro-source-strip reveal-up" id="proSourceStrip"><span>Baseline snapshot {{ intel.generated_at }}</span>{% for source in intel.sources %}<span class="pro-source-status {{ source.status }}"><b>{{ source.name }}</b> · {{ source.freshness or source.detail or source.status }}</span>{% endfor %}</section>
+<script>
+(() => {
+    const panel = document.getElementById('proLiveResearch'); if (!panel) return;
+    const grid = panel.querySelector('[data-intel-grid]'); const status = panel.querySelector('[data-intel-status]'); const strip = document.getElementById('proSourceStrip');
+    const esc = (value) => String(value || '').replace(/[&<>"']/g, (ch) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[ch]);
+    const money = (value) => Number.isFinite(Number(value)) ? new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(Number(value)) : '—';
+    const card = (kicker, title, body) => `<article class="pro-panel"><div class="pro-panel-kicker">${esc(kicker)}</div><h3>${esc(title)}</h3>${body}</article>`;
+    const render = (intel) => {
+        const quote = intel.quote || {}; const setMetric = (key, strong, small, tone = '') => { const target = document.querySelector(`[data-metric="${key}"]`); if (!target) return; target.querySelector('strong').textContent = strong; target.querySelector('strong').className = tone; target.querySelector('small').textContent = small; };
+        document.querySelector('[data-live-name]').textContent = quote.name || 'Company name unavailable';
+        document.querySelector('[data-live-price]').textContent = `${quote.currency || 'USD'} ${Number(quote.price || 0).toFixed(2)}`;
+        const change = Number(quote.change_pct || 0); const changeNode = document.querySelector('[data-live-change]'); changeNode.textContent = `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`; changeNode.className = change >= 0 ? 'performance-up' : 'performance-down'; document.querySelector('[data-live-quote-status]').textContent = intel.cached ? 'Cached live snapshot' : 'Latest available quote';
+        setMetric('range', Number(quote.price || 0).toFixed(2), `Low ${Number(quote.fifty_two_week_low || 0).toFixed(2)} · High ${Number(quote.fifty_two_week_high || 0).toFixed(2)}`);
+        const momentum = Number((intel.technical || {}).month_change_pct || 0); setMetric('momentum', `${momentum >= 0 ? '+' : ''}${momentum.toFixed(2)}%`, 'From available daily closes', momentum >= 0 ? 'performance-up' : 'performance-down');
+        setMetric('volume', money(quote.volume), 'Latest reported session'); setMetric('dividend', `${Number(quote.dividend_yield_pct || 0).toFixed(2)}%`, 'Provider-reported where available'); setMetric('pe', `${Number(quote.pe_ratio || 0).toFixed(1)}×`, quote.sector || 'Sector unavailable'); setMetric('cap', money(quote.market_cap), `Beta ${Number(quote.beta || 0).toFixed(2)}`);
+        const news = (intel.news || []).slice(0, 6); const newsPanel = document.querySelector('[data-live-news]'); if (newsPanel) newsPanel.innerHTML = news.length ? news.map((item) => `<a href="${esc(item.link || '#')}" target="_blank" rel="noopener"><small>${esc(item.source || 'News')} · ${esc(item.published || 'Recent')}</small><strong>${esc(item.title || 'Market headline')}</strong><span>↗</span></a>`).join('') : '<p>No attributed headlines were returned.</p>';
+        const personal = intel.personal_context || {}; const personalPanel = document.querySelector('[data-live-personal]'); if (personalPanel) { const position = personal.position; personalPanel.innerHTML = `<div class="pro-panel-kicker">Your paper portfolio</div><h3>Exposure & history</h3>${position ? `<div class="pro-position"><strong>${esc(position.quantity || 0)} shares</strong><span>Average ${esc(Number(position.avg_price || 0).toFixed(2))}</span><span>Value ${esc(Number(position.market_value || 0).toFixed(2))}</span></div>` : '<p>No open Flow paper position in this symbol.</p>'}<p class="pro-mini-copy">${esc((personal.trades || []).length)} recorded trades · ${esc((personal.orders || []).length)} orders</p>`; }
+        const mediaPanel = document.querySelector('[data-live-media]'); const mediaRows = ((intel.global_media || {}).articles || []).slice(0, 6); if (mediaPanel) mediaPanel.querySelector('.pro-timeline').innerHTML = mediaRows.length ? mediaRows.map((item) => `<a href="${esc(item.url || '#')}" target="_blank" rel="noopener"><small>${esc(item.domain || 'Global media')} · ${esc(item.published_at || 'Recent')} · ${esc(item.language || '')}</small><strong>${esc(item.title || '')}</strong><span>↗</span></a>`).join('') : '<p>No global-media links were returned. This is separate context only and does not affect the research stance.</p>';
+        const facts = intel.financials || intel.company_facts || {}; const health = facts.health || {}; const latest = (facts.metrics || []).slice(0, 6).map((metric) => { const point = (metric.points || []).at(-1) || {}; return `<div><small>${esc(metric.label)}</small><strong>${metric.unit === 'USD' ? '$' : ''}${esc(money(point.value))}</strong><span>${esc(point.period || point.end || '')}</span></div>`; }).join('') || '<p>Official financial history is unavailable for this issuer.</p>';
+        const analyst = intel.analyst_context || {}; const target = analyst.price_target || {}; const recommendation = (analyst.recommendations || [])[0] || {}; const peers = (analyst.peers || []).slice(0, 8).map(esc).join(' · ') || 'No peer set returned.';
+        const insiders = (intel.ownership || {}).insiders || []; const official = (intel.ownership || {}).official_filings || [];
+        const insiderRows = insiders.slice(0, 4).map((row) => `<div><small>${esc(row.date || 'Recent')} · ${esc(row.type || 'Transaction')}</small><strong>${esc(row.name || 'Insider')}</strong><span>${esc(money(row.shares))} shares</span></div>`).join('') || '<p>No insider summaries were returned.</p>';
+        const officialRows = official.slice(0, 3).map((row) => `<a href="${esc(row.url || '#')}" target="_blank" rel="noopener"><small>${esc(row.form || 'SEC')} · ${esc(row.filed_at || '')}</small><strong>${esc(row.title || 'Official ownership filing')}</strong></a>`).join('');
+        const macro = intel.macro || {}; const macroRows = [...(macro.treasury || []), ...(macro.fred || []).slice(0, 4)].map((row) => `<div><small>${esc(row.label)}</small><strong>${esc(row.value ?? '—')} ${esc(row.unit || '')}</strong><span>${esc(row.date || '')}</span></div>`).join('') || '<p>Macro sources are temporarily unavailable.</p>';
+        grid.innerHTML = card('Official financials / SEC XBRL', 'Financial health', `<div class="pro-fact-grid">${latest}</div><p class="pro-mini-copy">Net margin: ${esc(health.net_margin_pct ?? '—')}% · Net debt: ${esc(money(health.net_debt))}</p>`) + card('Analyst & peers / optional', 'Consensus context', `<div class="pro-key-value"><span>Target range</span><strong>${esc(target.targetLow ?? '—')} – ${esc(target.targetHigh ?? '—')}</strong><span>Recommendation</span><strong>${esc(`${recommendation.strongBuy ?? 0} strong buy · ${recommendation.buy ?? 0} buy · ${recommendation.sell ?? 0} sell`)}</strong></div><p class="pro-mini-copy">Peers: ${peers}</p>`) + card('Ownership & insiders', 'Records, not a signal', `<div class="pro-timeline">${insiderRows}${officialRows}</div>`) + card('Macro regime', 'Rates & credit', `<div class="pro-macro-list">${macroRows}</div>`);
+        strip.innerHTML = `<span>${intel.cached ? 'Cached' : 'Updated'} ${esc(intel.generated_at || '')}</span>` + (intel.sources || []).map((item) => `<span class="pro-source-status ${esc(item.status)}"><b>${esc(item.name)}</b> · ${esc(item.freshness || item.detail || item.status)}</span>`).join('');
+        status.textContent = `${intel.cached ? 'Cached source snapshot' : 'Fresh source snapshot'} · each item remains labelled with its provider.`;
+    };
+    const load = async (refresh = false) => { status.textContent = 'Refreshing official, macro and optional research sources…'; try { const response = await fetch(`/api/pro/stocks/${encodeURIComponent(panel.dataset.symbol)}/snapshot${refresh ? '?refresh=1' : ''}`, { credentials: 'include' }); const intel = await response.json(); if (!response.ok) throw new Error(intel.detail || 'Research sources unavailable'); render(intel); } catch (error) { status.textContent = `Baseline view remains available · ${error.message}`; } };
+    panel.querySelector('[data-intel-refresh]').addEventListener('click', () => load(true)); load();
+})();
+document.querySelectorAll('[data-pro-brief]').forEach((button) => button.addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    const panel = document.getElementById('proAiBrief');
+    const output = panel.querySelector('.pro-ai-output');
+    const action = button.dataset.action || 'analyse';
+    const originalLabel = button.textContent;
+    document.querySelectorAll('[data-pro-brief]').forEach((item) => { item.disabled = true; });
+    button.textContent = 'Working…';
+    output.textContent = '';
+    try {
+        const response = await fetch(`/api/pro/stocks/${encodeURIComponent(panel.dataset.symbol)}/research-brief?action=${encodeURIComponent(action)}`, { credentials: 'include' });
+        const brief = await response.json();
+        if (!response.ok || brief.source === 'unavailable') throw new Error(brief.detail || brief.summary || 'Hosted AI is unavailable.');
+        const esc = (value) => String(value || '').replace(/[&<>"']/g, (ch) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[ch]);
+        const list = (title, rows) => rows?.length ? `<section><h4>${esc(title)}</h4><ul>${rows.map((row) => `<li>${esc(row)}</li>`).join('')}</ul></section>` : '';
+        output.innerHTML = `<div class="pro-ai-stance"><span>${esc(brief.stance || 'Research brief')}</span><b>${esc(brief.confidence || 0)}/100 confidence</b></div><p>${esc(brief.summary || '')}</p>${list('Evidence considered', brief.evidence_used)}${list('Missing or unavailable data', brief.evidence_gaps)}${list('Bull case', brief.bull_case)}${list('Bear case & risks', [...(brief.bear_case || []), ...(brief.risks || [])])}${list('Catalysts', brief.catalysts)}${list('What would change the view', brief.what_changes)}<section><h4>Paper-trade guardrails</h4><ul><li>${esc(brief.paper_trade_plan?.entry_trigger || 'No trigger supplied.')}</li><li>${esc(brief.paper_trade_plan?.size_guardrail || 'No size guardrail supplied.')}</li><li>${esc(brief.paper_trade_plan?.invalidation || 'No invalidation supplied.')}</li><li>${esc(brief.paper_trade_plan?.review_date || 'No review date supplied.')}</li></ul></section>`;
+    } catch (error) { output.textContent = `AI Research Brief unavailable: ${error.message}`; }
+    finally { document.querySelectorAll('[data-pro-brief]').forEach((item) => { item.disabled = false; }); button.textContent = originalLabel; }
+}));
+</script>
+{% endblock %}

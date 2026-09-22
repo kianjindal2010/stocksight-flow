@@ -7,12 +7,12 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
     <link href="/static/styles.css" rel="stylesheet">
     <title>{{ app_name }}{% block title %}{% endblock %}</title>
 </head>
-<body class="ss-body {% if preferences and preferences.theme_mode == 'dark' %}theme-dark{% endif %} {% if preferences and preferences.layout_mode == 'topbar' %}layout-topbar{% else %}layout-sidebar{% endif %}">
+<body class="ss-body {% if preferences and preferences.theme_mode == 'dark' %}theme-dark{% endif %} {% if preferences and preferences.layout_mode == 'topbar' %}layout-topbar{% else %}layout-sidebar{% endif %} {% if workspace_mode == 'pro' %}workspace-pro{% endif %}">
     <div class="app-backdrop" aria-hidden="true">
         <span class="orb orb-1"></span>
         <span class="orb orb-2"></span>
@@ -24,14 +24,29 @@
         <div class="app-chrome">
             <aside class="app-sidebar">
                 <div class="sidebar-inner">
-                    <a class="sidebar-brand" href="/">
-                        <span class="brand-mark">SS</span>
+                    <a class="sidebar-brand" href="{% if workspace_mode == 'pro' %}/pro{% else %}/{% endif %}">
+                        <img class="brand-mark" src="/static/stocksight-logo.png" alt="StockSight Flow logo">
                         <span class="brand-stack">
                             <span class="brand-text">StockSight</span>
-                            <span class="brand-variant">FLOW</span>
+                            <span class="brand-variant">{% if workspace_mode == 'pro' %}PRO{% else %}FLOW{% endif %}</span>
                         </span>
                     </a>
 
+                    {% if workspace_mode == 'pro' %}
+                    <div class="sidebar-section pro-sidebar-section">
+                        <p class="sidebar-label">Pro research</p>
+                        <a class="sidebar-link" href="/pro">Research Desk</a>
+                        <a class="sidebar-link" href="/pro/stocks/NVDA">Stock Workspace</a>
+                        <a class="sidebar-link" href="/portfolio-insights">Portfolio Context</a>
+                        <a class="sidebar-link" href="/ai-chat">Pro AI Copilot</a>
+                    </div>
+                    <div class="sidebar-section">
+                        <p class="sidebar-label">Flow</p>
+                        <a class="sidebar-link" href="/">Back to Flow dashboard</a>
+                        <a class="sidebar-link" href="/quote">Quick Quote</a>
+                        <a class="sidebar-link" href="/watchlist">Flow Watchlist</a>
+                    </div>
+                    {% else %}
                     <div class="sidebar-section">
                         <p class="sidebar-label">Core</p>
                         <a class="sidebar-link" href="/">Dashboard</a>
@@ -47,6 +62,7 @@
                         <a class="sidebar-link" href="/history">Trade History</a>
                         <a class="sidebar-link" href="/journal">Trade Journal</a>
                     </div>
+                    {% endif %}
 
                     <div class="sidebar-section">
                         <p class="sidebar-label">Insights</p>
@@ -97,10 +113,12 @@
                         <span class="chip chip-flow">Preview Mode</span>
                         <a class="header-link" href="/login">Log in</a>
                         {% else %}
-                        <span class="chip chip-flow">StockSight Flow</span>
+                        <nav class="workspace-switcher" aria-label="Workspace">
+                            <a href="/" class="{% if workspace_mode != 'pro' %}is-active{% endif %}">Flow</a>
+                            <a href="/pro" class="{% if workspace_mode == 'pro' %}is-active{% endif %}">Pro <span>↗</span></a>
+                        </nav>
                         {% endif %}
-                        <a class="header-link" href="/instructions">Account</a>
-                        <a class="header-link" href="/instructions">Layout</a>
+                        <a class="header-link" href="/instructions">Help</a>
                     </div>
                 </header>
 
@@ -185,6 +203,30 @@
 <script>
 document.querySelector("[data-nav-toggle]")?.addEventListener("click", () => document.body.classList.toggle("nav-open"));
 
+// Pro uses a single, quiet reveal sequence as each research section enters the
+// viewport. It is disabled automatically for people who prefer reduced motion.
+if (document.body.classList.contains("workspace-pro") && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    document.body.classList.add("pro-scroll-motion");
+    const revealObserver = new IntersectionObserver((entries, observer) => {
+        entries.forEach((entry) => {
+            if (!entry.isIntersecting) return;
+            entry.target.classList.add("is-revealed");
+            observer.unobserve(entry.target);
+        });
+    }, { threshold: 0.12 });
+    document.querySelectorAll(".reveal-up").forEach((element) => revealObserver.observe(element));
+}
+
+// Keep the workspace orientation clear without duplicating route logic in every template.
+const currentPath = window.location.pathname.replace(/\/$/, "") || "/";
+document.querySelectorAll(".sidebar-link").forEach((link) => {
+    const href = link.getAttribute("href");
+    if (href && href !== "#" && (href === currentPath || (href !== "/" && currentPath.startsWith(`${href}/`)))) {
+        link.classList.add("is-current");
+        link.setAttribute("aria-current", "page");
+    }
+});
+
 document.getElementById("logout-link")?.addEventListener("click", async (ev) => {
     ev.preventDefault();
     await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
@@ -209,6 +251,10 @@ document.querySelectorAll("[data-market-btn]").forEach((btn) => {
     btn.addEventListener("click", async () => {
         await setMarket(btn.getAttribute("data-market-btn"));
     });
+});
+
+document.querySelectorAll("[data-market-btn]").forEach((btn) => {
+    btn.setAttribute("aria-pressed", String(btn.getAttribute("data-market-btn") === document.getElementById("marketSelect")?.value));
 });
 
 {% if authenticated and not preview_mode %}

@@ -3,16 +3,20 @@
 {% block title %} - Log In{% endblock %}
 
 {% block guest_main %}
+{% set auth_mode = "signup" if request.query_params.get("mode") == "signup" else "login" %}
 <style>
-.login-shell { max-width: 980px; margin: 0 auto; display: grid; grid-template-columns: 1fr minmax(300px,430px); gap: 1rem; align-items: stretch; }
+.login-shell { max-width: 1040px; margin: 0 auto; display: grid; grid-template-columns: 1fr minmax(320px,460px); gap: 1rem; align-items: stretch; }
 .login-brand-panel { border-radius: 22px; padding: 1.45rem 1.55rem; background: linear-gradient(135deg,#1d4ed8,#0b1220); color: #fff; box-shadow: 0 24px 38px rgba(11,18,32,.24); }
 .login-card { border-radius: 22px; border: 1px solid rgba(15,23,42,.1); padding: 1.45rem; background: rgba(255,255,255,.92); box-shadow: 0 18px 34px rgba(15,23,42,.1); }
+.auth-mode-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; padding: .35rem; border: 1px solid rgba(15,23,42,.1); border-radius: 14px; background: rgba(15,23,42,.04); }
+.auth-mode-toggle .btn { border-radius: 10px; }
+.auth-panel[hidden] { display: none !important; }
 @media (max-width: 920px) { .login-shell { grid-template-columns: 1fr; } }
 </style>
-<div class="login-shell">
+<div class="login-shell" data-initial-mode="{{ auth_mode }}">
     <section class="login-brand-panel">
         <h1>Welcome to StockSight Learner</h1>
-        <p>Firebase-powered authentication with a learner-first market workspace.</p>
+        <p>Secure account access with a learner-first market workspace.</p>
         <div class="login-highlights">
             <span>Paper trading only</span>
             <span>Guided curriculum and feedback</span>
@@ -20,100 +24,266 @@
         </div>
     </section>
     <section class="login-card">
-        <h2>Sign in</h2>
-        <p>Use email/password or Firebase Google Sign-In.</p>
-        <form id="loginForm">
-            <div class="mb-3"><label class="form-label">Email</label><input id="email" class="form-control" type="email" required></div>
-            <div class="mb-3"><label class="form-label">Password</label><input id="password" class="form-control" type="password" required></div>
-            <div class="d-flex gap-2">
-                <button class="btn btn-primary" type="submit">Log In</button>
-                <a class="btn btn-outline-secondary" href="/register">Create account</a>
-            </div>
+        <div class="auth-mode-toggle mb-3" role="tablist" aria-label="Choose auth mode">
+            <button class="btn btn-sm {% if auth_mode == 'login' %}btn-primary{% else %}btn-outline-secondary{% endif %}" type="button" data-auth-mode="login" aria-selected="{{ 'true' if auth_mode == 'login' else 'false' }}">Sign in</button>
+            <button class="btn btn-sm {% if auth_mode == 'signup' %}btn-primary{% else %}btn-outline-secondary{% endif %}" type="button" data-auth-mode="signup" aria-selected="{{ 'true' if auth_mode == 'signup' else 'false' }}">Create account</button>
+        </div>
+
+        <form id="signinForm" class="auth-panel" data-auth-panel="login" {% if auth_mode == "signup" %}hidden{% endif %}>
+            <h2>Sign in</h2>
+            <p>Use your StockSight email/password, or continue with Google.</p>
+            <div class="mb-3"><label class="form-label" for="loginEmail">Email</label><input id="loginEmail" class="form-control" type="email" autocomplete="email" required></div>
+            <div class="mb-3"><label class="form-label" for="loginPassword">Password</label><input id="loginPassword" class="form-control" type="password" autocomplete="current-password" required></div>
+            <button class="btn btn-primary" type="submit">Log In</button>
+            <button class="btn btn-link btn-sm px-0 ms-2" id="forgotPasswordBtn" type="button">Forgot password?</button>
         </form>
+
+        <form id="signupForm" class="auth-panel" data-auth-panel="signup" {% if auth_mode != "signup" %}hidden{% endif %}>
+            <h2>Create account</h2>
+            <p>Start a guided paper-trading workspace with email/password.</p>
+            <div class="mb-3"><label class="form-label" for="signupDisplayName">Display name</label><input id="signupDisplayName" class="form-control" type="text" autocomplete="name"></div>
+            <div class="mb-3"><label class="form-label" for="signupWorkspaceName">Workspace name</label><input id="signupWorkspaceName" class="form-control" value="Trading Workspace" type="text"></div>
+            <div class="mb-3"><label class="form-label" for="signupEmail">Email</label><input id="signupEmail" class="form-control" type="email" autocomplete="email" required></div>
+            <div class="mb-3"><label class="form-label" for="signupPassword">Password</label><input id="signupPassword" class="form-control" type="password" autocomplete="new-password" minlength="6" required></div>
+            <button class="btn btn-primary" type="submit">Create Account</button>
+        </form>
+
+        {% if appwrite_project_id %}
         <hr>
-        <button class="btn btn-outline-primary btn-sm" id="googlePopupBtn" type="button">Sign in with Google</button>
+        <button class="btn btn-outline-primary btn-sm" id="googleBtn" type="button">Continue with Google</button>
+        <p class="small text-muted mt-2 mb-0">Use the same Google account you used with StockSight before.</p>
+        <div id="authMsg" class="small mt-3 text-danger" role="status" aria-live="polite"></div>
+        {% else %}
+        <hr>
+        <button class="btn btn-outline-primary btn-sm" id="googleBtn" type="button">Continue with Google</button>
         <details class="mt-3">
             <summary class="small text-muted">Have an ID token already?</summary>
-            <div class="mb-2 mt-2"><label class="form-label">Google/Firebase ID Token</label><textarea id="googleToken" class="form-control" rows="3" placeholder="Paste Firebase ID token"></textarea></div>
-            <button class="btn btn-outline-secondary btn-sm" id="googleBtn" type="button">Sign in with Token</button>
+            <div class="mb-2 mt-2"><label class="form-label" for="googleToken">Google/Firebase ID Token</label><textarea id="googleToken" class="form-control" rows="3" placeholder="Paste Firebase ID token"></textarea></div>
+            <button class="btn btn-outline-secondary btn-sm" id="googleTokenBtn" type="button">Sign in with Token</button>
         </details>
-        <div id="loginMsg" class="small mt-3 text-danger"></div>
+        <div id="authMsg" class="small mt-3 text-danger" role="status" aria-live="polite"></div>
+        {% endif %}
     </section>
 </div>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
-import { getAuth, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+import { getAuth, GoogleAuthProvider, getRedirectResult, onAuthStateChanged, signInWithRedirect } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 
-const msg = document.getElementById("loginMsg");
+const shell = document.querySelector(".login-shell");
+const msg = document.getElementById("authMsg");
 const webApiKey = {{ firebase_web_api_key|tojson }};
 const projectId = {{ firebase_project_id|tojson }};
 const authDomain = {{ firebase_auth_domain|tojson }};
-let popupAuth = null;
+const appwriteEnabled = {{ (appwrite_project_id|length > 0)|tojson }};
+let firebaseAuth = null;
+let googleSignInFinished = false;
 
 if (webApiKey && projectId) {
-    const app = initializeApp({ apiKey: webApiKey, projectId: projectId, authDomain: authDomain || `${projectId}.firebaseapp.com` });
-    popupAuth = getAuth(app);
+    const firebaseApp = initializeApp({ apiKey: webApiKey, projectId: projectId, authDomain: authDomain || `${projectId}.firebaseapp.com` });
+    firebaseAuth = getAuth(firebaseApp);
 }
 
-document.getElementById("googlePopupBtn").addEventListener("click", async () => {
-    msg.textContent = "";
-    if (!popupAuth) {
-        msg.textContent = "Firebase web config is missing. Set FIREBASE_WEB_API_KEY and FIREBASE_PROJECT_ID.";
-        return;
-    }
-    try {
-        const provider = new GoogleAuthProvider();
-        const credential = await signInWithPopup(popupAuth, provider);
-        const idToken = await credential.user.getIdToken();
-        const res = await fetch("/api/auth/google", {
-            method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id_token: idToken }),
-        });
-        const data = await res.json();
-        if (!res.ok) {
-            msg.textContent = data.detail || "Google sign-in failed";
-            return;
-        }
-        window.location.href = "/";
-    } catch (err) {
-        msg.textContent = String(err);
-    }
-});
-</script>
-<script>
-const msg = document.getElementById("loginMsg");
-document.getElementById("loginForm").addEventListener("submit", async (ev) => {
-    ev.preventDefault();
-    msg.textContent = "";
-    const payload = {
-        email: document.getElementById("email").value.trim(),
-        password: document.getElementById("password").value,
-    };
-    const res = await fetch("/api/auth/login", {
+function setMessage(text, isError = true) {
+    msg.textContent = text || "";
+    msg.classList.toggle("text-danger", Boolean(text) && isError);
+    msg.classList.toggle("text-success", Boolean(text) && !isError);
+}
+
+function showMode(mode) {
+    const nextMode = mode === "signup" ? "signup" : "login";
+    shell.dataset.initialMode = nextMode;
+    document.querySelectorAll("[data-auth-panel]").forEach((panel) => {
+        panel.hidden = panel.dataset.authPanel !== nextMode;
+    });
+    document.querySelectorAll("[data-auth-mode]").forEach((button) => {
+        const isSelected = button.dataset.authMode === nextMode;
+        button.setAttribute("aria-selected", String(isSelected));
+        button.classList.toggle("btn-primary", isSelected);
+        button.classList.toggle("btn-outline-secondary", !isSelected);
+    });
+    setMessage("");
+}
+
+async function postJson(path, payload) {
+    const res = await fetch(path, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
     });
-    const data = await res.json();
-    if (!res.ok) { msg.textContent = data.detail || "Login failed"; return; }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(data.detail || data.message || "StockSight could not complete that request. Please try again.");
+    }
     window.location.href = "/";
-});
-document.getElementById("googleBtn").addEventListener("click", async () => {
-    msg.textContent = "";
-    const token = document.getElementById("googleToken").value.trim();
-    if (!token) { msg.textContent = "Paste a Firebase ID token first."; return; }
-    const res = await fetch("/api/auth/google", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id_token: token }),
+}
+
+async function finishGoogleSignIn(user) {
+    if (googleSignInFinished) {
+        return;
+    }
+    googleSignInFinished = true;
+    const idToken = await user.getIdToken();
+    await postJson("/api/auth/google", { id_token: idToken });
+}
+
+async function finishExternalGoogleSignIn(state) {
+    const deadline = Date.now() + 5 * 60 * 1000;
+    while (Date.now() < deadline) {
+        const response = await fetch(`/api/auth/external/status?state=${encodeURIComponent(state)}`, { credentials: "include" });
+        const data = await response.json().catch(() => ({}));
+        if (data.status === "ready") {
+            const consume = await fetch("/api/auth/external/consume", {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ state }),
+            });
+            const consumeData = await consume.json().catch(() => ({}));
+            if (!consume.ok) throw new Error(consumeData.detail || "Could not finish Google sign-in.");
+            window.location.href = "/";
+            return;
+        }
+        if (data.status === "error" || data.status === "expired") {
+            throw new Error(data.error || "Google sign-in expired. Please try again.");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    throw new Error("Google sign-in timed out. Please try again.");
+}
+
+async function openExternalGoogleSignIn() {
+    const response = await fetch("/api/auth/external/start", { method: "POST", credentials: "include" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.state) throw new Error(data.detail || "Could not start Google sign-in.");
+    const authUrl = `${window.location.origin}/auth/google/external?state=${encodeURIComponent(data.state)}`;
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.open_external_auth) {
+        await window.pywebview.api.open_external_auth(authUrl);
+    } else {
+        window.open(authUrl, "stocksightGoogleAuth", "noopener,noreferrer");
+    }
+    setMessage("Finish Google sign-in in the external browser window...");
+    await finishExternalGoogleSignIn(data.state);
+}
+
+if (firebaseAuth) {
+    // Some embedded WebView engines restore the Firebase user without returning
+    // it from getRedirectResult, so listen for the settled auth state as well.
+    onAuthStateChanged(firebaseAuth, (user) => {
+        if (user && !googleSignInFinished) {
+            setMessage("Finishing Google sign-in...");
+            finishGoogleSignIn(user).catch((err) => {
+                googleSignInFinished = false;
+                setMessage(err.message || String(err));
+            });
+        }
     });
-    const data = await res.json();
-    if (!res.ok) { msg.textContent = data.detail || "Google token login failed"; return; }
-    window.location.href = "/";
+    getRedirectResult(firebaseAuth)
+        .then((result) => {
+            if (result && result.user) {
+                setMessage("Finishing Google sign-in...");
+                return finishGoogleSignIn(result.user);
+            }
+            return null;
+        })
+        .catch((err) => {
+            setMessage(err.message || String(err));
+        });
+}
+
+document.querySelectorAll("[data-auth-mode]").forEach((button) => {
+    button.addEventListener("click", () => showMode(button.dataset.authMode));
+});
+
+document.getElementById("signinForm").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    setMessage("");
+    try {
+        await postJson("/api/auth/login", {
+            email: document.getElementById("loginEmail").value.trim(),
+            password: document.getElementById("loginPassword").value,
+        });
+    } catch (err) {
+        setMessage(err.message || "Login failed");
+    }
+});
+
+document.getElementById("forgotPasswordBtn")?.addEventListener("click", async () => {
+    const email = document.getElementById("loginEmail").value.trim();
+    if (!email) {
+        setMessage("Enter your email first, then choose Forgot password.");
+        document.getElementById("loginEmail").focus();
+        return;
+    }
+    try {
+        const res = await fetch("/api/auth/password-reset", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || "We could not start password reset.");
+        setMessage(data.message || "Check your inbox for a password reset link.", false);
+    } catch (err) {
+        setMessage(err.message || "We could not start password reset.");
+    }
+});
+
+document.getElementById("signupForm").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    setMessage("");
+    try {
+        await postJson("/api/auth/signup", {
+            email: document.getElementById("signupEmail").value.trim(),
+            password: document.getElementById("signupPassword").value,
+            display_name: document.getElementById("signupDisplayName").value.trim(),
+            workspace_name: document.getElementById("signupWorkspaceName").value.trim() || "Trading Workspace",
+        });
+    } catch (err) {
+        setMessage(err.message || "Signup failed");
+    }
+});
+
+document.getElementById("googleBtn")?.addEventListener("click", async () => {
+    msg.textContent = "";
+    if (appwriteEnabled) {
+        try {
+            await openExternalGoogleSignIn();
+        } catch (err) {
+            setMessage(err.message || String(err));
+        }
+        return;
+    }
+    if (!firebaseAuth) {
+        setMessage("Firebase web config is missing. Set FIREBASE_WEB_API_KEY and FIREBASE_PROJECT_ID.");
+        return;
+    }
+    try {
+        if (window.pywebview && window.pywebview.api && window.pywebview.api.open_external_auth) {
+            await openExternalGoogleSignIn();
+            return;
+        }
+        const provider = new GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: "select_account" });
+        setMessage("Opening Google sign-in...");
+        await signInWithRedirect(firebaseAuth, provider);
+    } catch (err) {
+        setMessage(err.message || String(err));
+    }
+});
+
+document.getElementById("googleTokenBtn")?.addEventListener("click", async () => {
+    setMessage("");
+    const token = document.getElementById("googleToken").value.trim();
+    if (!token) {
+        setMessage("Paste a Firebase ID token first.");
+        return;
+    }
+    try {
+        await postJson("/api/auth/google", { id_token: token });
+    } catch (err) {
+        setMessage(err.message || "Google token login failed");
+    }
 });
 </script>
 {% endblock %}

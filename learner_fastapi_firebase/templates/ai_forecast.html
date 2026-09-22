@@ -27,9 +27,9 @@
             <div class="card mt-3 ai-inline-card">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-3">
-                        <h5 class="mb-0">Nemotron's Read on {{ symbol }}</h5>
+                        <h5 class="mb-0">{{ ai_model_label }}'s Read on {{ symbol }}</h5>
                         <span class="ai-source-pill">
-                            {{ "NVIDIA Nemotron 3 Ultra" if forecast_ai.source == "nvidia_llm" else "Backup analysis" }}
+                            {{ ai_model_label if forecast_ai.source == "nvidia_llm" else "Backup analysis" }}
                         </span>
                     </div>
                     <div class="ai-insight-grid">
@@ -58,9 +58,9 @@
             <div class="card mt-3 ai-inline-card">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-3">
-                        <h5 class="mb-0">What Nemotron Notices in Your Portfolio</h5>
+                        <h5 class="mb-0">What {{ ai_model_label }} Notices in Your Portfolio</h5>
                         <span class="ai-source-pill">
-                            {{ "NVIDIA Nemotron 3 Ultra" if portfolio_explainer.source == "nvidia_llm" else "Backup analysis" }}
+                            {{ ai_model_label if portfolio_explainer.source == "nvidia_llm" else "Backup analysis" }}
                         </span>
                     </div>
                     <div class="ai-insight-grid">

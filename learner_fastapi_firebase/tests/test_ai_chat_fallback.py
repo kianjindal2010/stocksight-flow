@@ -77,6 +77,24 @@ def test_chat_fallback_greeting_does_not_dump_portfolio():
     assert "Entry" not in reply
 
 
+def test_chat_uses_hosted_function_without_a_local_nvidia_key(monkeypatch):
+    svc = AIAdvisorService(
+        api_key="",
+        base_url="https://example.com/v1",
+        model="test-model",
+        appwrite_function_id="stocksight_ai_coach",
+        appwrite_endpoint="https://example.appwrite.io/v1",
+        appwrite_project_id="project",
+        appwrite_session_provider=lambda _uid: "session-token",
+    )
+    monkeypatch.setattr(svc, "_hosted_chat", lambda _uid, _messages: "Hosted reply")
+
+    out = svc.chat_reply(uid="u1", market="US", message="hello", history=[], context={})
+
+    assert out["reply"] == "Hosted reply"
+    assert out["source"] == "hosted_nvidia_llm"
+
+
 def test_chat_fallback_improve_named_position_is_specific():
     svc = _service()
     context = _context_with_positions()
@@ -148,6 +166,7 @@ def test_nemotron_request_disables_long_hidden_thinking_for_chat_latency():
             return [SimpleNamespace(choices=[SimpleNamespace(delta=delta)])]
 
     svc.model = "nvidia/nemotron-3-ultra-550b-a55b"
+    assert svc.model_label == "NVIDIA Nemotron 3 Ultra"
     svc._client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
     reply = svc._stream_chat([{"role": "user", "content": "hello"}], max_tokens=200)
 
@@ -167,9 +186,37 @@ def test_deepseek_v4_request_uses_documented_non_streaming_mode():
             return SimpleNamespace(choices=[SimpleNamespace(message=message)])
 
     svc.model = "deepseek-ai/deepseek-v4-pro"
+    assert svc.model_label == "DeepSeek V4 Pro"
     svc._client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
     reply = svc._stream_chat([{"role": "user", "content": "hello"}], max_tokens=200)
 
     assert reply == "DeepSeek answer"
     assert captured["stream"] is False
     assert captured["extra_body"] == {"chat_template_kwargs": {"thinking": False}}
+
+
+def test_model_comparison_uses_same_prompt_for_both_models():
+    svc = _service()
+    svc._enabled = True
+    calls = []
+
+    def fake_chat_with_model(model, messages, max_tokens=1400):  # type: ignore[no-untyped-def]
+        calls.append((model, messages, max_tokens))
+        return f"Answer from {model}"
+
+    svc._chat_with_model = fake_chat_with_model  # type: ignore[method-assign]
+    result = svc.compare_chat_models(
+        uid="u1",
+        market="US",
+        message="Compare this position",
+        history=[],
+        context=_context_with_positions(),
+    )
+
+    assert [row["status"] for row in result["results"]] == ["ok", "ok"]
+    assert {call[0] for call in calls} == {
+        "nvidia/nemotron-3-ultra-550b-a55b",
+        "deepseek-ai/deepseek-v4-pro",
+    }
+    assert all(call[1][-1]["content"] == "Compare this position" for call in calls)
+    assert all(call[2] == 500 for call in calls)
