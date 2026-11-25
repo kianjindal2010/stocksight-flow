@@ -1,20 +1,31 @@
-# StockSight Learner download site
+# StockSight Learner
 
-This is the standalone Vercel landing page for the Windows desktop release.
+StockSight Learner is a free Windows app for learning about stocks and practicing trades with a simulated portfolio. It includes watchlists, lessons and quizzes, a trade journal, a Risk Lab, and an AI Coach.
 
-## Publish a release
+## Download for Windows
 
-1. Upload `../dist/StockSightLearner-Updated.exe` to Gofile and copy its public HTTPS URL.
-2. Copy `.env.example` to `.env` and set the release values:
-   - `VITE_DOWNLOAD_URL` must be an `https://gofile.io/...` link.
-   - `VITE_RELEASE_VERSION` is the label shown on the page.
-   - `VITE_FILE_SIZE` is the download size shown on the page.
-   - `VITE_SHA256` must be the 64-character SHA-256 value of the uploaded EXE.
-3. In Vercel, import the `download-site` folder as a new project and add the same four variables under **Project Settings → Environment Variables**.
-4. Deploy. Vercel will provide the permanent `*.vercel.app` address.
+1. Open the [latest GitHub release](https://github.com/kianjindal2010/stocksight-flow/releases/latest).
+2. Download `StockSightLearner-Updated.exe` under **Assets**.
+3. Verify the download before opening it. In PowerShell, run:
 
-The page deliberately hides every download button if the configured Gofile URL is missing or not valid. It shows the checksum only when it is a valid SHA-256 value.
+   ```powershell
+   Get-FileHash "$HOME\Downloads\StockSightLearner-Updated.exe" -Algorithm SHA256
+   ```
 
-## Local preview
+   Compare the result with the SHA-256 checksum GitHub lists for that release's installer. Windows may warn that the installer is unsigned.
 
-Install dependencies with `npm install`, then use `npm run dev`.
+## Screenshots
+
+| Dashboard | AI Coach | Risk Lab |
+| --- | --- | --- |
+| ![StockSight dashboard](public/screenshots/dashboard.jpg) | ![AI Coach chat](public/screenshots/ai-chat-final.jpg) | ![Risk Lab](public/screenshots/risk-lab.jpg) |
+
+## Download site development
+
+Run `npm ci` and `npm run dev` from the repository root. Run `npm run build` to build the site for Vercel. The download button links to GitHub's latest release.
+
+## Help
+
+Email [kian.jindal2010@gmail.com](mailto:kian.jindal2010@gmail.com) with a screenshot, your Windows version, and what you were doing when the issue occurred.
+
+StockSight is for education and paper trading. It does not provide investment advice.
