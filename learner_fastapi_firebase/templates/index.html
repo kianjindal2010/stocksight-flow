@@ -10,42 +10,18 @@
 {% set risk_class = "status-ok" if coach.risk_level == "Low" else ("status-caution" if coach.risk_level == "Medium" else "status-avoid") %}
 {% set deadline_class = "performance-down" if goal_deadline.is_overdue else ("text-warning" if goal_deadline.is_due_today else "performance-up") %}
 
-<div class="dashboard-layout dashboard-v2">
-    <div class="row g-4">
-        <div class="col-12">
-            <div class="sp500-tile dashboard-hero d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
-                <div>
-                    <div class="sp500-label">{{ market_name|upper }}</div>
-                    <div class="sp500-subtitle">{{ benchmark.label }} - Live paper-trading benchmark</div>
-                    <div class="d-flex align-items-baseline flex-wrap gap-3 mt-2">
-                        <span id="benchmarkValue" class="sp500-value">{{ currency_symbol }}{{ "%.2f"|format(benchmark.price or 0) }}</span>
-                        <span id="benchmarkChange" class="sp500-change {{ benchmark_class }}">{{ "%+.2f"|format(benchmark.change_pct or 0) }}%</span>
-                    </div>
-                    <div id="marketSessionNote" class="dashboard-hero-note">Data refreshes automatically for your selected market. {{ market_session.next_session if market_session else "" }}</div>
-                </div>
-                <div class="sp500-pills">
-                    <div class="sp500-pill">
-                        <span class="sp500-pill-label">Paper Trading</span>
-                        <span class="sp500-pill-value">Live</span>
-                    </div>
-                    <div class="sp500-pill">
-                        <span class="sp500-pill-label">Market Status</span>
-                        <span id="marketStatusValue" class="sp500-pill-value">{{ market_session.label if market_session else "Closed" }}</span>
-                    </div>
-                    <div class="sp500-pill">
-                        <span class="sp500-pill-label">Learning Progress</span>
-                        <span id="learningProgressValue" class="sp500-pill-value">{{ dashboard.learning_progress_pct }}%</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
+<div class="dashboard-layout dashboard-v2 flow-workspace">
+    <header class="workspace-heading">
+        <div><h2>Portfolio</h2><p>{{ market_name }} paper account <span id="portfolioRefreshStatus" role="status">{% if summary_loading %} | Updating prices{% endif %}</span></p></div>
+        <div class="workspace-actions"><a class="btn btn-outline-secondary" href="/watchlist">Watchlist</a><a class="btn btn-primary" href="/buy">Place a paper order</a></div>
+    </header>
+    <div class="row g-0 flow-page-grid">
         <div class="col-md-3">
             <div class="card summary-card summary-card--value h-100">
                 <div class="card-body">
                     <div class="summary-label">Portfolio Value</div>
                     <div id="portfolioValue" class="summary-value fw-bold h3 mb-1">{{ currency_symbol }}{{ "%.2f"|format(portfolio.total_value or 0) }}</div>
-                    <div class="summary-subvalue">Total account value</div>
+                    <div class="summary-subvalue">Including available cash</div>
                 </div>
             </div>
         </div>
@@ -63,32 +39,32 @@
                 <div class="card-body">
                     <div class="summary-label">Return (Total)</div>
                     <div id="totalReturn" class="summary-value fw-bold h3 mb-1 {{ total_class }}">{{ "%+.2f"|format(dashboard.simple_return_pct or 0) }}%</div>
-                    <div class="summary-subvalue">Since first simulated investment</div>
+                    <div class="summary-subvalue">Since your first paper trade</div>
                 </div>
             </div>
         </div>
         <div class="col-md-3">
             <div class="card summary-card h-100">
                 <div class="card-body">
-                    <div class="summary-label">Goal Deadline</div>
-                    <div id="goalDeadlineText" class="summary-value fw-bold h3 mb-1 {{ deadline_class }}">{{ goal_deadline.label }}</div>
-                    <div id="goalDeadlineDate" class="summary-subvalue">
-                        {% if goal_deadline.has_deadline %}
-                        Target date: {{ goal_deadline.target_deadline }}
-                        {% else %}
-                        Set your deadline in Portfolio Goals
-                        {% endif %}
-                    </div>
-                    <a class="small d-inline-block mt-2" href="/portfolio-goals">Manage goal</a>
+                    <div class="summary-label">Available cash</div>
+                    <div id="portfolioCashSummary" class="summary-value fw-bold h3 mb-1">{{ currency_symbol }}{{ "%.2f"|format(portfolio.cash or 0) }}</div>
+                    <div class="summary-subvalue">Cash for paper orders</div>
                 </div>
             </div>
         </div>
 
-        <div class="col-lg-8">
+        <div class="col-lg-8 flow-holdings">
             <div class="card portfolio-section-card h-100">
                 <div class="card-header bg-transparent">
                     <h2 class="section-heading mb-0">My Portfolio</h2>
-                    <p class="section-subtitle mb-0">Paper trades for {{ market_name }} market. Click a symbol to open a quick quote.</p>
+                    <p class="section-subtitle mb-0">Select a stock to see its quote.</p>
+                </div>
+                <div class="portfolio-allocation">
+                    <label for="cashAllocation">Cash as a share of portfolio value</label>
+                    {% set account_value = portfolio.total_value or 0 %}
+                    {% set cash_share = [0, [100, (portfolio.cash or 0) * 100 / account_value]|min]|max if account_value > 0 else 0 %}
+                    <meter id="cashAllocation" min="0" max="100" value="{{ cash_share }}">{{ "%.1f"|format(cash_share) }}%</meter>
+                    <output id="cashAllocationLabel">{{ "%.1f"|format(cash_share) }}%</output>
                 </div>
                 <div class="card-body table-responsive">
                     <table class="table portfolio-table align-middle">
@@ -143,7 +119,24 @@
             </div>
         </div>
 
-        <div class="col-lg-4 d-grid gap-3">
+        <div class="col-lg-4 d-grid gap-3 flow-side">
+            <section class="card" aria-labelledby="flow-watchlist-title">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-baseline gap-2">
+                        <h2 class="section-heading mb-0" id="flow-watchlist-title">Watchlist</h2>
+                        <a href="/watchlist">Manage</a>
+                    </div>
+                    {% if watchlist_symbols %}
+                    <ul class="dashboard-watchlist">
+                        {% for symbol in watchlist_symbols %}
+                        <li><a href="/quote?q={{ symbol|urlencode }}">{{ symbol }}</a></li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <p class="mb-0 mt-2">Add stocks to your watchlist to see them here.</p>
+                    {% endif %}
+                </div>
+            </section>
             <div class="card card-metric">
                 <div class="card-metric-header metric-tone-news">
                     <div class="card-metric-header-title">Add Cash</div>
@@ -237,11 +230,56 @@
                     </a>
                     {% endfor %}
                     {% if not news %}
-                    <div class="list-group-item text-muted metric-list-item">No live headlines found right now.</div>
+                    <div class="list-group-item text-muted metric-list-item">{{ "Loading market headlines." if summary_loading else "No headlines available." }}</div>
                     {% endif %}
                 </div>
             </div>
         </div>
+        <div class="col-12 flow-benchmark">
+            <div class="sp500-tile dashboard-hero d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                <div>
+                    <div class="sp500-label">{{ market_name|upper }}</div>
+                    <div class="sp500-subtitle">{{ benchmark.label }}</div>
+                    <div class="d-flex align-items-baseline flex-wrap gap-3 mt-2">
+                        <span id="benchmarkValue" class="sp500-value">{% if benchmark.price %}{{ currency_symbol }}{{ "%.2f"|format(benchmark.price) }}{% elif summary_loading %}Loading{% else %}Unavailable{% endif %}</span>
+                        <span id="benchmarkChange" class="sp500-change {{ benchmark_class }}">{% if benchmark.price %}{{ "%+.2f"|format(benchmark.change_pct or 0) }}%{% endif %}</span>
+                    </div>
+                    <div id="marketSessionNote" class="dashboard-hero-note">{{ market_session.next_session if market_session else "" }}</div>
+                </div>
+                <div class="sp500-pills">
+                    <div class="sp500-pill">
+                        <span class="sp500-pill-label">Paper Trading</span>
+                        <span class="sp500-pill-value">Live</span>
+                    </div>
+                    <div class="sp500-pill">
+                        <span class="sp500-pill-label">Market Status</span>
+                        <span id="marketStatusValue" class="sp500-pill-value">{{ market_session.label if market_session else "Closed" }}</span>
+                    </div>
+                    <div class="sp500-pill">
+                        <span class="sp500-pill-label">Learning Progress</span>
+                        <span id="learningProgressValue" class="sp500-pill-value">{{ dashboard.learning_progress_pct }}%</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12">
+            <div class="card summary-card h-100">
+                <div class="card-body">
+                    <div class="summary-label">Goal</div>
+                    <div id="goalDeadlineText" class="summary-value fw-bold h3 mb-1 {{ deadline_class }}">{{ goal_deadline.label }}</div>
+                    <div id="goalDeadlineDate" class="summary-subvalue">
+                        {% if goal_deadline.has_deadline %}
+                        Target date: {{ goal_deadline.target_deadline }}
+                        {% else %}
+                        Set your deadline in Portfolio Goals
+                        {% endif %}
+                    </div>
+                    <a class="small d-inline-block mt-2" href="/portfolio-goals">Manage goal</a>
+                </div>
+            </div>
+        </div>
+
     </div>
 </div>
 <script>
@@ -280,10 +318,14 @@
         )).join("");
     }
 
+    let summaryInFlight = false;
     async function refreshDashboardSummary() {
+        if (summaryInFlight) return;
+        summaryInFlight = true;
+        const status = document.getElementById("portfolioRefreshStatus");
         try {
             const res = await fetch("/api/dashboard/summary", { credentials: "include" });
-            if (!res.ok) return;
+            if (!res.ok) throw new Error("Price update unavailable");
             const data = await res.json();
             const benchmark = data.benchmark || {};
             const dashboard = data.dashboard || {};
@@ -312,18 +354,27 @@
             const worstPerformersList = document.getElementById("worstPerformersList");
             const marketHeadlines = document.getElementById("marketHeadlines");
 
-            if (benchmarkValue) benchmarkValue.textContent = currency + Number(benchmark.price || 0).toFixed(2);
+            if (benchmarkValue) benchmarkValue.textContent = Number(benchmark.price) > 0 ? currency + Number(benchmark.price).toFixed(2) : "Unavailable";
             if (benchmarkChange) {
                 const change = Number(benchmark.change_pct || 0);
-                benchmarkChange.textContent = fmtSignedPct(change);
+                benchmarkChange.textContent = Number(benchmark.price) > 0 ? fmtSignedPct(change) : "";
                 benchmarkChange.classList.remove("performance-up", "performance-down");
                 benchmarkChange.classList.add(classForChange(change));
             }
-            if (marketSessionNote) marketSessionNote.textContent = "Data refreshes automatically for your selected market. " + String(marketSession.next_session || "");
+            if (marketSessionNote) marketSessionNote.textContent = "" + String(marketSession.next_session || "");
             if (marketStatusValue) marketStatusValue.textContent = String(marketSession.label || "Closed");
             if (learningProgressValue) learningProgressValue.textContent = String(Math.round(Number(dashboard.learning_progress_pct || 0))) + "%";
             if (portfolioValue) portfolioValue.textContent = currency + Number(portfolio.total_value || 0).toFixed(2);
             if (portfolioCash) portfolioCash.textContent = currency + Number(portfolio.cash || 0).toFixed(2);
+        const cashSummary = document.getElementById("portfolioCashSummary");
+        if (cashSummary) cashSummary.textContent = currency + Number(portfolio.cash || 0).toFixed(2);
+        const cashAllocation = document.getElementById("cashAllocation");
+        if (cashAllocation) {
+            const total = Number(portfolio.total_value || 0);
+            const share = total > 0 ? Math.max(0, Math.min(100, Number(portfolio.cash || 0) * 100 / total)) : 0;
+            cashAllocation.value = share;
+            document.getElementById("cashAllocationLabel").value = share.toFixed(1) + "%";
+        }
             if (portfolioGrandTotal) portfolioGrandTotal.textContent = currency + Number(portfolio.total_value || 0).toFixed(2);
             if (todayReturn) {
                 const change = Number(dashboard.changed_today_pct || 0);
@@ -377,8 +428,14 @@
                     )).join("");
                 }
             }
+            if (status) status.textContent = "";
         } catch (err) {
+            if (status) status.textContent = " | Showing last saved prices";
+            const benchmarkValue = document.getElementById("benchmarkValue");
+            if (benchmarkValue?.textContent === "Loading") benchmarkValue.textContent = "Unavailable";
             console.debug("Dashboard summary refresh failed", err);
+        } finally {
+            summaryInFlight = false;
         }
     }
 
@@ -396,11 +453,11 @@
             if (summary) summary.textContent = String(coach.summary || "");
             if (actions) {
                 const rows = Array.isArray(coach.actions) ? coach.actions : [];
-                actions.innerHTML = rows.map((row) => "<li>" + String(row) + "</li>").join("");
+                actions.innerHTML = rows.map((row) => "<li>" + escapeHtml(row) + "</li>").join("");
             }
             if (newsWatch) {
                 const rows = Array.isArray(coach.news_watch) ? coach.news_watch : [];
-                newsWatch.innerHTML = rows.map((row) => "<li>" + String(row) + "</li>").join("");
+                newsWatch.innerHTML = rows.map((row) => "<li>" + escapeHtml(row) + "</li>").join("");
             }
             if (disclaimer) disclaimer.textContent = String(coach.disclaimer || "");
         } catch (err) {
@@ -448,6 +505,7 @@
             amountInput.value = "";
             if (notesInput) notesInput.value = "";
             await refreshDashboardSummary();
+            loadCoach();
         } catch (err) {
             feedback.className = "alert alert-danger mt-3 mb-0";
             feedback.textContent = "Network error. Please try again.";
@@ -459,9 +517,15 @@
     }
 
     document.getElementById("addCashForm")?.addEventListener("submit", submitDeposit);
-    refreshDashboardSummary();
-    loadCoach();
-    window.setInterval(refreshDashboardSummary, 30000);
+    {% if summary_loading %}refreshDashboardSummary();{% endif %}
+    {% if coach_loading %}loadCoach();{% endif %}
+    window.addEventListener("stocksight:orders-filled", () => {
+        refreshDashboardSummary();
+        loadCoach();
+    });
+    window.setInterval(() => {
+        if (document.visibilityState === "visible") refreshDashboardSummary();
+    }, 60000);
 })();
 </script>
 {% endblock %}

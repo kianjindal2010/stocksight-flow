@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import sys
 from html import escape
 from concurrent.futures import ThreadPoolExecutor
@@ -25,6 +26,8 @@ from .services.emailer import EmailService
 from .services.firestore_repo import FirestoreRepository
 from .services.appwrite_repo import AppwriteRepository
 from .services.ai_advisor import AIAdvisorService
+from .services.page_cache import PageCache
+from .services.pro_score import score_stock, stock_ratios
 from .services.chat_context import build_ai_chat_context, build_ai_user_context
 from .services.learning_engine import LearningEngine
 from .services.market_data import MarketDataService
@@ -361,8 +364,30 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
+    def _pro_review_date(value: str) -> str:
+        value = value.strip()
+        if not value:
+            return ""
+        for date_format in ("%Y-%m-%d", "%d %b %Y"):
+            try:
+                return datetime.strptime(value, date_format).date().isoformat()
+            except ValueError:
+                continue
+        raise ValueError("Enter a date like 25 Nov 2026.")
+
+    def _display_pro_date(value: str | None) -> str:
+        try:
+            return datetime.strptime(value or "", "%Y-%m-%d").strftime("%d %b %Y").lstrip("0")
+        except ValueError:
+            return value or ""
+
+    templates.env.filters["pro_date"] = _display_pro_date
+
+
     @app.middleware("http")
     async def firebase_session_middleware(request: Request, call_next):
+        if request.url.path.startswith("/static/") or request.url.path == "/health":
+            return await call_next(request)
         started = perf_counter()
         status_code = 500
         request.state.current_user = None
@@ -375,7 +400,7 @@ def create_app() -> FastAPI:
             try:
                 if settings.appwrite_project_id:
                     from .appwrite import get_account
-                    decoded = get_account(settings, token)
+                    decoded = await run_in_threadpool(get_account, settings, token)
                 elif settings.firebase_use_memory and token.startswith("dev-token:"):
                     _, uid, email = token.split(":", 2)
                     decoded = {"uid": uid, "email": email, "name": email.split("@")[0]}
@@ -391,7 +416,7 @@ def create_app() -> FastAPI:
                 if uid:
                     if settings.appwrite_project_id:
                         app.state.repo.set_session(uid, token)
-                    app.state.repo.ensure_user(uid, email=email, display_name=display_name)
+                    await run_in_threadpool(app.state.repo.ensure_user, uid, email=email, display_name=display_name)
             except Exception:
                 if restored_session:
                     app.state.desktop_session_store.clear()
@@ -517,6 +542,7 @@ def create_app() -> FastAPI:
                     "preferences": preferences,
                     "market": market,
                     "available_markets": market_options,
+                    "has_open_orders": app.state.repo.has_open_orders(uid, market),
                 }
             )
         if extra:
@@ -572,6 +598,11 @@ def create_app() -> FastAPI:
             key=lambda row: _f(row.get("day_change_pct")),
         )[:4]
         return positions, top_positions, worst_positions
+
+    page_cache = PageCache()
+
+    def _workspace_key(panel: str, uid: str, market: str, variant: str = "") -> tuple:
+        return (panel, uid, market, variant, app.state.repo.workspace_revision(uid, market))
 
     def _advisor_user_context(uid: str, market: str) -> dict[str, Any]:
         return build_ai_user_context(
@@ -686,7 +717,9 @@ def create_app() -> FastAPI:
                     continue
                 should_fill, order_updates = _evaluate_order_trigger(order, last_price)
                 if order_updates:
-                    app.state.repo.update_order(uid, order["id"], order_updates)
+                    changed = {key: value for key, value in order_updates.items() if order.get(key) != value}
+                    if changed:
+                        app.state.repo.update_order(uid, order["id"], changed)
                 if not should_fill:
                     continue
             except Exception as exc:
@@ -932,34 +965,20 @@ def create_app() -> FastAPI:
         if market not in {"US", "INDIA"}:
             market = "US"
             app.state.repo.set_selected_market(uid, market)
-        parallel_rows = _run_parallel(
-            {
-                "dashboard": lambda: app.state.learning_engine.dashboard(uid, market),
-                "benchmark": lambda: app.state.market_data.benchmark_quote(market),
-                "market_session": lambda: app.state.market_data.market_session(market),
-                "news": lambda: app.state.market_data.market_news(market, limit=8),
-                "health": lambda: app.state.learning_engine.health_score(uid, market),
-                "weekly_summary": lambda: app.state.learning_engine.weekly_summary(uid, market),
-                "mistakes": lambda: app.state.learning_engine.mistake_detection(uid, market),
-                "mood": lambda: app.state.market_data.market_mood(market),
-            },
-            max_workers=8,
-        )
-        dashboard = parallel_rows.get("dashboard") or app.state.learning_engine.dashboard(uid, market)
-        benchmark = parallel_rows.get("benchmark") or app.state.market_data.benchmark_quote(market)
-        market_session = parallel_rows.get("market_session") or app.state.market_data.market_session(market)
-        news = parallel_rows.get("news") or []
-        health = parallel_rows.get("health") or app.state.learning_engine.health_score(uid, market)
-        weekly_summary = parallel_rows.get("weekly_summary") or app.state.learning_engine.weekly_summary(uid, market)
-        mistakes = parallel_rows.get("mistakes") or app.state.learning_engine.mistake_detection(uid, market)
-        mood = parallel_rows.get("mood") or app.state.market_data.market_mood(market)
+        dashboard = app.state.learning_engine.dashboard(uid, market, refresh_prices=False)
+        cached_summary = page_cache.peek(_workspace_key("dashboard-summary", uid, market))
+        benchmark = {"label": "Nifty 50" if market == "INDIA" else "S&P 500"}
+        market_session = app.state.market_data.market_session(market)
         portfolio = app.state.repo.get_portfolio(uid, market)
         positions = portfolio.get("positions", [])
         positions, top_positions, worst_positions = _dashboard_position_rows(positions)
-        currency_code = str(benchmark.get("currency") or "USD")
+        currency_code = str(benchmark.get("currency") or ("INR" if market == "INDIA" else "USD"))
         goal = app.state.repo.get_learning_doc(uid, "portfolio_goal", default={})
         goal_deadline = _goal_deadline_status(goal)
-        coach = _coach_loading_placeholder()
+        watchlists = app.state.repo.list_watchlists(uid)
+        watchlist_symbols = (watchlists[0].get("symbols") or [])[:8] if watchlists else []
+        cached_coach = page_cache.peek(_workspace_key("dashboard-coach", uid, market))
+        coach = cached_coach or _coach_loading_placeholder()
         return templates.TemplateResponse(
             request,
             "index.html",
@@ -967,18 +986,20 @@ def create_app() -> FastAPI:
                 request,
                 {
                     "dashboard": dashboard,
-                    "benchmark": benchmark,
-                    "news": news,
+                    "benchmark": (cached_summary or {}).get("benchmark") or benchmark,
+                    "news": (cached_summary or {}).get("news", []),
                     "portfolio": portfolio,
                     "positions": positions,
                     "top_positions": top_positions,
                     "worst_positions": worst_positions,
                     "coach": coach,
-                    "coach_loading": True,
+                    "coach_loading": cached_coach is None,
+                    "summary_loading": cached_summary is None,
                     "market_session": market_session,
                     "currency_code": currency_code,
                     "currency_symbol": _currency_symbol(currency_code),
                     "goal_deadline": goal_deadline,
+                    "watchlist_symbols": watchlist_symbols,
                 },
             ),
         )
@@ -1124,9 +1145,9 @@ def create_app() -> FastAPI:
             symbol = str(row.get("symbol") or "").upper()
             intel = row.get("intel") if isinstance(row.get("intel"), dict) else {}
             quote = intel.get("quote") if isinstance(intel.get("quote"), dict) else {}
-            if quote:
+            if _f(quote.get("price")) > 0:
                 identity = f"market:{symbol}:{str(intel.get('generated_at') or '')[:10]}"
-                items.append({"id": identity, "type": "market", "symbol": symbol, "title": f"{symbol} market snapshot", "detail": f"{quote.get('change_pct') or 0:+.2f}% · latest available session", "url": f"/pro/stocks/{symbol}", "source": "Yahoo Finance", "verified": True})
+                items.append({"id": identity, "type": "market", "symbol": symbol, "title": "Market snapshot", "detail": f"{quote.get('change_pct') or 0:+.2f}% · latest available session", "url": f"/pro/stocks/{symbol}", "source": "Yahoo Finance", "verified": True})
             for macro_row in ((intel.get("macro") or {}).get("fred") or [])[:2]:
                 identity = f"macro:{macro_row.get('id') or macro_row.get('label')}:{macro_row.get('date')}"
                 items.append({"id": identity, "type": "macro", "symbol": "US", "title": macro_row.get("label") or "Macro release", "detail": f"{macro_row.get('value') if macro_row.get('value') is not None else '—'} {macro_row.get('unit') or ''} · {macro_row.get('date') or 'latest'}", "url": f"/pro/stocks/{symbol}", "source": "FRED", "verified": True})
@@ -1159,14 +1180,8 @@ def create_app() -> FastAPI:
         uid = _auth_or_redirect(request)
         if isinstance(uid, RedirectResponse):
             return uid
-        market = app.state.repo.get_selected_market(uid)
         workspace = _pro_workspace(uid)
         queue = [str(value).upper() for value in (workspace.get("queue") or []) if str(value).strip()][:8]
-        portfolio = app.state.repo.get_portfolio(uid, market)
-        positions = portfolio.get("positions") or []
-        # The terminal opens immediately. The intelligence-feed endpoint
-        # hydrates expensive market sources after the shell is interactive.
-        attention = [{"symbol": symbol, "news": [], "community": {}} for symbol in queue[:4]]
         return templates.TemplateResponse(
             request,
             "pro_dashboard.html",
@@ -1177,15 +1192,32 @@ def create_app() -> FastAPI:
                     "pro_workspace": workspace,
                     "research_queue": queue,
                     "catalyst_calendar": _pro_catalyst_calendar(workspace),
-                    "portfolio": portfolio,
-                    "positions": positions,
-                    "community_attention": attention,
-                    "market_pulse": {"label": "Live market context", "summary": "Loading current market data in the background."},
-                    "benchmark": {"name": "Live market", "change_pct": 0},
-                    "feed_items": _pro_feed_items(workspace, attention, portfolio),
                 },
             ),
         )
+
+    @app.get("/pro/stocks")
+    def open_pro_stock(request: Request, symbol: str = "", q: str = ""):
+        uid = _auth_or_redirect(request)
+        if isinstance(uid, RedirectResponse):
+            return uid
+        market = app.state.repo.get_selected_market(uid)
+        query = (q or symbol).strip()
+        ticker = query.upper()
+        if q:
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 .&'-]{0,63}", query):
+                return _redirect("/pro", error="Enter a ticker or company name.")
+            if query != ticker or not re.fullmatch(r"[A-Z0-9^][A-Z0-9.^=-]{0,15}", ticker):
+                try:
+                    matches = app.state.market_data.search_symbols(query, market, limit=1)
+                except Exception:
+                    matches = []
+                if not matches:
+                    return _redirect("/pro", error="No matching stock was found in this market.")
+                ticker = str(matches[0].get("symbol") or "").upper()
+        if not re.fullmatch(r"[A-Z0-9^][A-Z0-9.^=-]{0,15}", ticker):
+            return _redirect("/pro", error="No matching stock was found in this market.")
+        return _redirect(f"/pro/stocks/{app.state.market_data.normalize_symbol(ticker, market)}")
 
     @app.get("/pro/stocks/{symbol}", response_class=HTMLResponse)
     async def pro_stock_page(request: Request, symbol: str):
@@ -1193,7 +1225,7 @@ def create_app() -> FastAPI:
         if isinstance(uid, RedirectResponse):
             return uid
         market = app.state.repo.get_selected_market(uid)
-        resolved = app.state.market_data.resolve_symbol(symbol, market)
+        resolved = app.state.market_data.normalize_symbol(symbol, market)
         # Do not hold navigation hostage to price history or external APIs.
         # The screen paints as a terminal shell and hydrates in the background.
         intel = _pro_shell_snapshot(resolved, market)
@@ -1219,13 +1251,17 @@ def create_app() -> FastAPI:
         )
 
     @app.post("/pro/stocks/{symbol}/research")
-    async def save_pro_research(request: Request, symbol: str, thesis: str = Form(""), catalysts: str = Form(""), review_date: str = Form(""), notes: str = Form("")):
+    def save_pro_research(request: Request, symbol: str, thesis: str = Form(""), catalysts: str = Form(""), review_date: str = Form(""), notes: str = Form("")):
         uid = _auth_or_redirect(request)
         if isinstance(uid, RedirectResponse):
             return uid
         workspace = _pro_workspace(uid)
         research = dict(workspace.get("research") or {})
         normalized_symbol = symbol.upper().strip()
+        try:
+            review_date = _pro_review_date(review_date)
+        except ValueError as exc:
+            return _redirect(f"/pro/stocks/{normalized_symbol}", error=str(exc))
         research[normalized_symbol] = {
             "thesis": thesis.strip()[:4000],
             "catalysts": catalysts.strip()[:2500],
@@ -1240,7 +1276,7 @@ def create_app() -> FastAPI:
         return _redirect(f"/pro/stocks/{normalized_symbol}", message="Pro research saved.")
 
     @app.post("/pro/watchlist")
-    async def update_pro_watchlist(request: Request, symbol: str = Form(""), remove_symbol: str = Form("")):
+    def update_pro_watchlist(request: Request, symbol: str = Form(""), remove_symbol: str = Form("")):
         uid = _auth_or_redirect(request)
         if isinstance(uid, RedirectResponse):
             return uid
@@ -1261,7 +1297,23 @@ def create_app() -> FastAPI:
         if not uid:
             raise HTTPException(status_code=401, detail="Sign in to refresh Pro research.")
         market = app.state.repo.get_selected_market(uid)
-        resolved = app.state.market_data.resolve_symbol(symbol, market)
+        resolved = app.state.market_data.normalize_symbol(symbol, market)
+        if request.query_params.get("view") == "financials":
+            market_data = app.state.market_data
+            metrics = await run_in_threadpool(market_data.annual_financials, resolved, market)
+            quote = await run_in_threadpool(market_data.quote, resolved, market)
+            return {"metrics": metrics, "resolved_ratios": stock_ratios({"quote": quote}, metrics)}
+        if request.query_params.get("view") == "market":
+            market_data = app.state.market_data
+            result = await run_in_threadpool(
+                _run_parallel,
+                {
+                    "quote": lambda: market_data.quote(resolved, market),
+                    "history": lambda: market_data.quote_history(resolved, market, period="1y", interval="1d"),
+                },
+            )
+            result["resolved_ratios"] = stock_ratios(result)
+            return JSONResponse(result)
         refresh = str(request.query_params.get("refresh") or "").lower() in {"1", "true", "yes"}
         # This route is intentionally requested by the browser after the Pro
         # shell has painted.  The provider work is synchronous (requests,
@@ -1274,11 +1326,49 @@ def create_app() -> FastAPI:
             market,
             refresh=refresh,
         )
-        intel["personal_context"] = await run_in_threadpool(_pro_personal_context, uid, market, resolved)
-        return JSONResponse(intel)
+        personal = await run_in_threadpool(_pro_personal_context, uid, market, resolved)
+        return JSONResponse({**intel, "resolved_ratios": stock_ratios(intel), "personal_context": personal})
+
+    @app.get("/api/pro/stocks/{symbol}/score")
+    def pro_stock_score(request: Request, symbol: str):
+        uid = _uid(request)
+        if not uid:
+            raise HTTPException(status_code=401, detail="Sign in to score this stock.")
+        market = app.state.repo.get_selected_market(uid)
+        resolved = app.state.market_data.normalize_symbol(symbol, market)
+        return page_cache.load(("stock-score", uid, market, resolved), 300, lambda: _load_stock_score(uid, market, resolved))
+
+    def _load_stock_score(uid: str, market: str, symbol: str):
+        sources = _run_parallel({
+            "stock": lambda: app.state.pro_market_intel.snapshot(uid, symbol, market),
+            "market": lambda: app.state.market_data.market_news(market, limit=6),
+        }, max_workers=2)
+        intel = sources.get("stock") or {}
+        ratios = stock_ratios(intel)
+        if any(key not in ratios for key in ("profit_margin", "revenue_growth", "current_ratio", "debt_equity")):
+            try:
+                ratios = stock_ratios(intel, app.state.market_data.annual_financials(symbol, market))
+            except Exception:
+                logger.info("Could not load annual score inputs for %s", symbol, exc_info=True)
+        headlines = []
+        for group, items in (("company", intel.get("news") or []), ("market", sources.get("market") or []), ("sec", intel.get("filings") or [])):
+            seen = set()
+            for item in items:
+                title = str(item.get("title") or "").strip()
+                if not title or title.casefold() in seen:
+                    continue
+                seen.add(title.casefold())
+                headlines.append({"id": len(headlines) + 1, "group": group, "title": title[:250],
+                                  "publisher": "SEC EDGAR" if group == "sec" else str(item.get("source") or "")[:90]})
+                if len(seen) >= 5:
+                    break
+        sentiment = app.state.ai_advisor.pro_headline_sentiment(uid, symbol, headlines)
+        result = score_stock(intel, ratios, sentiment)
+        result["as_of"] = intel.get("generated_at")
+        return result
 
     @app.get("/api/pro/intelligence-feed")
-    async def pro_intelligence_feed(request: Request):
+    async def pro_intelligence_feed(request: Request, refresh: bool = False):
         uid = _uid(request)
         if not uid:
             raise HTTPException(status_code=401, detail="Sign in to refresh the Pro feed.")
@@ -1289,7 +1379,7 @@ def create_app() -> FastAPI:
         # ASGI event loop while optional sources time out or rate-limit.
         snapshots = await run_in_threadpool(
             _run_parallel,
-            {symbol: lambda symbol=symbol: app.state.pro_market_intel.snapshot(uid, symbol, market) for symbol in symbols},
+            {symbol: lambda symbol=symbol: app.state.pro_market_intel.snapshot(uid, symbol, market, refresh=refresh) for symbol in symbols},
             4,
         )
         rows = [{"symbol": symbol, "intel": snapshots.get(symbol) or {}} for symbol in symbols]
@@ -1297,7 +1387,7 @@ def create_app() -> FastAPI:
         return JSONResponse({"items": _pro_feed_items(workspace, rows, portfolio), "generated_at": _utc_now_iso(), "symbols": symbols})
 
     @app.post("/pro/feed-state")
-    async def update_pro_feed_state(request: Request, item_id: str = Form(""), action: str = Form(""), review_date: str = Form("")):
+    def update_pro_feed_state(request: Request, item_id: str = Form(""), action: str = Form(""), review_date: str = Form("")):
         uid = _auth_or_redirect(request)
         if isinstance(uid, RedirectResponse):
             return uid
@@ -1311,7 +1401,11 @@ def create_app() -> FastAPI:
                 dismissed.append(item_id)
                 saved.pop(item_id, None)
             elif action == "save":
-                saved[item_id] = {"review_date": review_date.strip()[:32], "saved_at": _utc_now_iso()}
+                try:
+                    date = _pro_review_date(review_date) if review_date.strip() else (saved.get(item_id) or {}).get("review_date", "")
+                except ValueError as exc:
+                    return _redirect("/pro", error=str(exc))
+                saved[item_id] = {"review_date": date, "saved_at": _utc_now_iso()}
                 dismissed = [value for value in dismissed if value != item_id]
         app.state.repo.set_learning_doc(uid, "pro_workspace", {"feed": {"dismissed": dismissed[-160:], "saved": saved}}, merge=True)
         return _redirect("/pro", message="Pro feed preference saved.")
@@ -1334,14 +1428,17 @@ def create_app() -> FastAPI:
         return JSONResponse(brief)
 
     @app.get("/api/ai/dashboard-brief")
-    async def api_ai_dashboard_brief(request: Request):
+    def api_ai_dashboard_brief(request: Request):
         uid = _uid(request) or _preview_uid(request)
         if not uid:
             raise HTTPException(status_code=401, detail="Not authenticated")
         market = app.state.repo.get_selected_market(uid)
+        return page_cache.load(_workspace_key("dashboard-coach", uid, market), 300, lambda: _load_dashboard_coach(uid, market))
+
+    def _load_dashboard_coach(uid: str, market: str):
         parallel_rows = _run_parallel(
             {
-                "dashboard": lambda: app.state.learning_engine.dashboard(uid, market),
+                "dashboard": lambda: app.state.learning_engine.dashboard(uid, market, refresh_prices=False),
                 "news": lambda: app.state.market_data.market_news(market, limit=8),
                 "health": lambda: app.state.learning_engine.health_score(uid, market),
                 "weekly_summary": lambda: app.state.learning_engine.weekly_summary(uid, market),
@@ -1350,7 +1447,7 @@ def create_app() -> FastAPI:
             },
             max_workers=6,
         )
-        dashboard = parallel_rows.get("dashboard") or app.state.learning_engine.dashboard(uid, market)
+        dashboard = parallel_rows.get("dashboard") or app.state.learning_engine.dashboard(uid, market, refresh_prices=False)
         news = parallel_rows.get("news") or []
         health = parallel_rows.get("health") or app.state.learning_engine.health_score(uid, market)
         weekly_summary = parallel_rows.get("weekly_summary") or app.state.learning_engine.weekly_summary(uid, market)
@@ -1378,7 +1475,7 @@ def create_app() -> FastAPI:
         )
 
     @app.get("/api/ai/quote-signal")
-    async def api_ai_quote_signal(request: Request):
+    def api_ai_quote_signal(request: Request):
         uid = _uid(request) or _preview_uid(request)
         if not uid:
             raise HTTPException(status_code=401, detail="Not authenticated")
@@ -1386,6 +1483,9 @@ def create_app() -> FastAPI:
         if not raw_symbol:
             raise HTTPException(status_code=400, detail="symbol is required")
         market = app.state.repo.get_selected_market(uid)
+        return page_cache.load(_workspace_key("quote-signal", uid, market, raw_symbol.upper()), 300, lambda: _load_quote_signal(uid, market, raw_symbol))
+
+    def _load_quote_signal(uid: str, market: str, raw_symbol: str):
         symbol = app.state.market_data.resolve_symbol(raw_symbol, market)
         parallel_rows = _run_parallel(
             {
@@ -1420,11 +1520,14 @@ def create_app() -> FastAPI:
         )
 
     @app.get("/api/dashboard/summary")
-    async def api_dashboard_summary(request: Request):
+    def api_dashboard_summary(request: Request):
         uid = _uid(request) or _preview_uid(request)
         if not uid:
             raise HTTPException(status_code=401, detail="Not authenticated")
         market = app.state.repo.get_selected_market(uid)
+        return page_cache.load(_workspace_key("dashboard-summary", uid, market), 60, lambda: _load_dashboard_summary(uid, market))
+
+    def _load_dashboard_summary(uid: str, market: str):
         parallel_rows = _run_parallel(
             {
                 "dashboard": lambda: app.state.learning_engine.dashboard(uid, market),
@@ -1441,7 +1544,7 @@ def create_app() -> FastAPI:
         portfolio = app.state.repo.get_portfolio(uid, market)
         positions = portfolio.get("positions", [])
         positions, top_positions, worst_positions = _dashboard_position_rows(positions)
-        currency_code = str(benchmark.get("currency") or "USD")
+        currency_code = str(benchmark.get("currency") or ("INR" if market == "INDIA" else "USD"))
         goal = app.state.repo.get_learning_doc(uid, "portfolio_goal", default={})
         goal_deadline = _goal_deadline_status(goal)
         return {
@@ -1466,27 +1569,30 @@ def create_app() -> FastAPI:
             return uid
         market = app.state.repo.get_selected_market(uid)
         watchlist = app.state.repo.ensure_default_watchlist(uid)
-        rows: list[dict[str, Any]] = []
-        for symbol in watchlist.get("symbols", []):
-            try:
-                quote = app.state.market_data.quote(symbol, market)
-                rows.append(
-                    {
-                        "symbol": quote.get("symbol"),
-                        "name": quote.get("name"),
-                        "price": quote.get("price"),
-                        "day_change": quote.get("change_pct"),
-                        "week_change": round(_f(quote.get("change_pct")) * 2.1, 2),
-                        "month_change": round(_f(quote.get("change_pct")) * 4.4, 2),
-                    }
-                )
-            except Exception:
-                continue
         return templates.TemplateResponse(
-            request,
-            "watchlist.html",
-            _context(request, {"watchlist": watchlist, "watch_rows": rows}),
+            request, "watchlist.html", _context(request, {"watchlist": watchlist}),
         )
+
+    @app.get("/api/watchlist/quotes")
+    def watchlist_quotes(request: Request):
+        uid = _uid(request) or _preview_uid(request)
+        if not uid:
+            raise HTTPException(status_code=401, detail="Sign in to load watchlist quotes.")
+        market = app.state.repo.get_selected_market(uid)
+        watchlists = app.state.repo.list_watchlists(uid)
+        symbols = watchlists[0].get("symbols", []) if watchlists else []
+        return page_cache.load(
+            ("watchlist-quotes", uid, market, tuple(symbols)),
+            60, lambda: _load_watchlist_quotes(symbols, market),
+        )
+
+    def _load_watchlist_quotes(symbols: list[str], market: str):
+        quotes = _run_parallel(
+            {symbol: lambda symbol=symbol: app.state.market_data.quote(symbol, market) for symbol in symbols},
+            6,
+        )
+        return {symbol: {key: quote.get(key) for key in ("name", "price", "currency", "change_pct")}
+                for symbol, quote in quotes.items() if isinstance(quote, dict)}
 
     @app.post("/watchlist/add")
     async def add_watchlist_symbol(request: Request, symbol: str = Form(...)):
@@ -1782,11 +1888,36 @@ def create_app() -> FastAPI:
         return _redirect("/journal", message="Trade journal updated.")
 
     @app.get("/portfolio-insights", response_class=HTMLResponse)
-    async def portfolio_insights_page(request: Request):
+    def portfolio_insights_page(request: Request):
         uid = _auth_or_redirect(request)
         if isinstance(uid, RedirectResponse):
             return uid
         market = app.state.repo.get_selected_market(uid)
+        health = app.state.learning_engine.health_score(uid, market)
+        cached = page_cache.peek(_workspace_key("portfolio-insights", uid, market))
+        explanation = cached["explanation"] if cached else app.state.learning_engine.explain_portfolio(uid, market)
+        return templates.TemplateResponse(
+            request,
+            "portfolio_insights.html",
+            _context(request, {
+                "health": health, "explanation": explanation,
+                "move_why": cached["move_why"] if cached else {},
+                "insights_loading": cached is None,
+            }),
+        )
+
+    @app.get("/api/portfolio/insights-detail")
+    def portfolio_insights_detail(request: Request):
+        uid = _uid(request) or _preview_uid(request)
+        if not uid:
+            raise HTTPException(status_code=401, detail="Sign in to load portfolio insights.")
+        market = app.state.repo.get_selected_market(uid)
+        return page_cache.load(
+            _workspace_key("portfolio-insights", uid, market), 300,
+            lambda: _load_portfolio_insights(uid, market),
+        )
+
+    def _load_portfolio_insights(uid: str, market: str):
         health = app.state.learning_engine.health_score(uid, market)
         base_explanation = app.state.learning_engine.explain_portfolio(uid, market)
         move_why = app.state.learning_engine.portfolio_move_why(uid, market)
@@ -1803,11 +1934,7 @@ def create_app() -> FastAPI:
                 "user_context": user_context,
             },
         )
-        return templates.TemplateResponse(
-            request,
-            "portfolio_insights.html",
-            _context(request, {"health": health, "explanation": explanation, "move_why": move_why}),
-        )
+        return {"explanation": explanation, "move_why": move_why}
 
     @app.get("/portfolio-goals", response_class=HTMLResponse)
     async def portfolio_goals_page(request: Request):
@@ -2291,7 +2418,8 @@ def create_app() -> FastAPI:
             return _redirect("/ai-chat", error="Please type a question for the AI coach.")
 
         history = _load_chat_history(uid, market)
-        context_payload = build_ai_chat_context(
+        context_payload = await run_in_threadpool(
+            build_ai_chat_context,
             uid=uid,
             market=market,
             repo=app.state.repo,
@@ -2330,7 +2458,8 @@ def create_app() -> FastAPI:
             return JSONResponse({"detail": "Please type a comparison prompt."}, status_code=400)
         market = app.state.repo.get_selected_market(uid)
         history = _load_chat_history(uid, market)
-        context_payload = build_ai_chat_context(
+        context_payload = await run_in_threadpool(
+            build_ai_chat_context,
             uid=uid,
             market=market,
             repo=app.state.repo,

@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
+from hashlib import sha256
+import json
 import time
 from typing import Any
 from uuid import uuid4
+
+STARTING_PAPER_CASH = 10000.0
 
 
 def utc_now() -> str:
@@ -40,6 +44,19 @@ class FirestoreRepository:
 
     def _memory(self) -> bool:
         return self.client is None
+
+    def workspace_revision(self, uid: str, market: str) -> str:
+        state = self._load_state(uid)
+        portfolio = state["portfolio"].get(market) or {}
+        positions = state["positions"].get(market) or {}
+        relevant = {
+            "cash": portfolio.get("cash", STARTING_PAPER_CASH),
+            "holdings": {symbol: (row.get("shares"), row.get("avg_price")) for symbol, row in positions.items()},
+            **{key: state[key] for key in ("watchlists", "trades", "journal", "cash_flows", "orders")},
+            "learning": {key: value for key, value in state["learning"].items()
+                         if key not in {"ai_chat", "pro_workspace"} and not key.startswith("ai_chat_")},
+        }
+        return sha256(json.dumps(relevant, sort_keys=True, default=str).encode()).hexdigest()
 
     def _uid_defaults(self, uid: str, email: str = "", display_name: str = "") -> dict[str, Any]:
         now = utc_now()
@@ -372,8 +389,8 @@ class FirestoreRepository:
         if market not in state["portfolio"]:
             state["portfolio"][market] = {
                 "market": market,
-                "cash": 10000.0,
-                "starting_cash": 10000.0,
+                "cash": STARTING_PAPER_CASH,
+                "starting_cash": STARTING_PAPER_CASH,
                 "net_deposits": 0.0,
                 "realized_pnl": 0.0,
                 "updated_at": utc_now(),
@@ -471,12 +488,17 @@ class FirestoreRepository:
             if previous_close <= 0:
                 previous_close = last_price
             day_unrealized = (last_price - previous_close) * shares
-            row["last_price"] = round(last_price, 4)
-            row["market_value"] = round(shares * last_price, 2)
-            row["unrealized_pnl"] = round((last_price - avg_price) * shares, 2)
-            row["previous_close"] = round(previous_close, 4)
-            row["day_change_pct"] = round(day_change_pct, 2)
-            row["day_unrealized_pnl"] = round(day_unrealized, 2)
+            marks = {
+                "last_price": round(last_price, 4),
+                "market_value": round(shares * last_price, 2),
+                "unrealized_pnl": round((last_price - avg_price) * shares, 2),
+                "previous_close": round(previous_close, 4),
+                "day_change_pct": round(day_change_pct, 2),
+                "day_unrealized_pnl": round(day_unrealized, 2),
+            }
+            if all(row.get(key) == value for key, value in marks.items()):
+                continue
+            row.update(marks)
             row["updated_at"] = utc_now()
             positions[symbol] = row
             updated = True
@@ -704,6 +726,12 @@ class FirestoreRepository:
             rows = [r for r in rows if str(r.get("market", "")).upper() == str(market).upper()]
         rows.sort(key=lambda row: row.get("created_at", ""), reverse=True)
         return deepcopy(rows)
+
+    def has_open_orders(self, uid: str, market: str) -> bool:
+        return any(
+            str(row.get("market", "")).upper() == market.upper() and row.get("status") == "open"
+            for row in self._load_state(uid)["orders"].values()
+        )
 
     def create_order(
         self,

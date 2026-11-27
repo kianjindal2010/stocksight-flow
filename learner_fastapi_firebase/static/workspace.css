@@ -1,0 +1,435 @@
+.ss-body {
+    --desk-bg: #f3f5f4;
+    --desk-panel: #fff;
+    --desk-ink: #182622;
+    --desk-muted: #50615b;
+    --desk-line: #d7dfdb;
+    --desk-accent: #126451;
+    --desk-active: #e3f0ea;
+    background: var(--desk-bg);
+    color: var(--desk-ink);
+    font-family: system-ui, 'Segoe UI', sans-serif;
+}
+
+.ss-body.theme-dark, .ss-body.workspace-pro {
+    color-scheme: dark;
+    --desk-bg: #111918;
+    --desk-panel: #192321;
+    --desk-ink: #e6eeeb;
+    --desk-muted: #a8b9b3;
+    --desk-line: #344641;
+    --desk-accent: #91d9bf;
+    --desk-active: #253e35;
+}
+
+.ss-body :focus-visible { outline: 2px solid var(--desk-accent); outline-offset: 3px; }
+.skip-link { position: fixed; top: .75rem; left: .75rem; z-index: 2000; padding: .65rem; background: var(--desk-panel); transform: translateY(-200%); }
+.skip-link:focus { transform: none; }
+.ss-body .app-sidebar, .ss-body .app-header, .ss-body .market-toolbar {
+    background: var(--desk-panel); color: var(--desk-ink); border-color: var(--desk-line); box-shadow: none;
+}
+.ss-body .sidebar-inner { gap: .35rem; }
+.ss-body .sidebar-brand, .ss-body .sidebar-section { background: transparent; box-shadow: none; border: 0; border-radius: 0; }
+.ss-body .sidebar-section { border-top: 1px solid var(--desk-line); padding-block: .45rem; }
+.ss-body .sidebar-label { color: var(--desk-muted); letter-spacing: 0; font-size: .75rem; text-transform: none; }
+.ss-body summary.sidebar-label { cursor: pointer; padding: .45rem .6rem; }
+.ss-body .sidebar-brand .brand-text, .ss-body .sidebar-link, .ss-body .workspace-meta h1, .ss-body .header-link { color: var(--desk-ink); }
+.ss-body .sidebar-link { padding-block: .42rem; border-radius: 5px; }
+.ss-body .sidebar-link:hover, .ss-body .sidebar-link.is-current { background: var(--desk-active); color: var(--desk-accent); }
+.ss-body .sidebar-link.is-current::before { display: none; }
+.ss-body .workspace-meta h1 { font: 650 1rem/1.3 system-ui, sans-serif; }
+.ss-body .workspace-meta p, .ss-body .market-tabs-label { color: var(--desk-muted); }
+.workspace-search, .workspace-actions { display: flex; align-items: center; gap: .5rem; }
+.workspace-search { flex: 0 1 25rem; }
+.workspace-search input { min-width: 7rem; }
+.workspace-heading { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .75rem; margin-bottom: 1.25rem; }
+.workspace-heading h2 { font-size: 1.7rem; margin: 0; }
+.workspace-heading p { margin: .25rem 0 0; color: var(--desk-muted); }
+.ss-body .btn-primary { color: #fff; background: #126451; border-color: #126451; box-shadow: none; }
+.ss-body .btn-primary:hover { background: #0d4d3f; }
+.ss-body .app-main :is(.card, .trade-card, .sell-card, .login-card, .pref-card) {
+    background: var(--desk-panel); color: var(--desk-ink); border: 1px solid var(--desk-line);
+    border-radius: 8px !important; box-shadow: none !important;
+}
+.app-shell-guest .login-shell { width: min(100%, 28rem); margin: clamp(.75rem, 6vh, 4rem) auto; }
+.app-shell-guest .login-card { padding: clamp(1rem, 4vw, 1.6rem); }
+.app-shell-guest .login-heading { display: flex; align-items: center; gap: .65rem; margin-bottom: 1.25rem; }
+.ss-body .app-shell-guest .login-card h1 { margin: 0; font: 650 1.35rem/1.25 system-ui, 'Segoe UI', sans-serif; }
+.app-shell-guest .auth-mode-toggle { display: flex; gap: .5rem; flex-wrap: wrap; border-bottom: 1px solid var(--desk-line); padding-bottom: .8rem; }
+.app-shell-guest .auth-panel[hidden] { display: none; }
+.app-shell-guest #authMsg:empty { display: none; }
+.ss-body .app-main :is(.form-control, .form-select), .ss-body .market-toolbar :is(.form-control, .form-select) {
+    background-color: var(--desk-panel); color: var(--desk-ink); border-color: var(--desk-line);
+}
+.ss-body :is(.form-control, .form-select)::placeholder { color: var(--desk-muted); }
+.ss-body .app-main :is(.trade-card-header, .sell-card-header, .card-metric-header) {
+    background: var(--desk-panel) !important; color: var(--desk-ink); border-bottom: 1px solid var(--desk-line);
+}
+.ss-body .app-main :is(.trade-subtitle, .sell-subtitle, .card-metric-subtitle, .summary-subvalue) { color: var(--desk-muted); }
+.ss-body .app-main :is(.trade-title, .sell-title, .card-metric-header-title) { color: var(--desk-ink); }
+.ss-body .app-main .table {
+    --bs-table-color: var(--desk-ink); --bs-table-bg: transparent; --bs-table-border-color: var(--desk-line);
+    --bs-table-striped-color: var(--desk-ink); --bs-table-striped-bg: var(--desk-bg);
+    --bs-table-hover-color: var(--desk-ink); --bs-table-hover-bg: var(--desk-active);
+    font-variant-numeric: tabular-nums;
+}
+.ss-body .dashboard-v2 .dashboard-hero {
+    background: var(--desk-panel) !important; color: var(--desk-ink); border: 1px solid var(--desk-line);
+    box-shadow: none !important; padding: .85rem 1rem; min-height: 0;
+}
+.ss-body .dashboard-v2 .dashboard-hero :is(.sp500-label, .sp500-subtitle, .sp500-value, .dashboard-hero-note, .sp500-pill-label, .sp500-pill-value) { color: var(--desk-ink); }
+.ss-body .dashboard-v2 .sp500-value { font-size: 1.35rem; letter-spacing: normal; }
+.ss-body .dashboard-v2 .sp500-pill { border: 0; background: var(--desk-bg); }
+.ss-body .dashboard-v2 .summary-card { min-height: 0; overflow: visible; }
+.ss-body .dashboard-v2 .summary-card::before { content: none; }
+.ss-body .dashboard-v2 .summary-value { font-size: clamp(1rem, 1.8vw, 1.55rem); white-space: nowrap; text-shadow: none; letter-spacing: -.025em; }
+.ss-body .dashboard-v2 .section-heading { font-size: 1.15rem; }
+.ss-body .dashboard-v2 .portfolio-table :is(th, td) { white-space: nowrap; }
+.dashboard-watchlist { display: grid; grid-template-columns: repeat(auto-fit, minmax(4rem, 1fr)); gap: .5rem; list-style: none; margin: .65rem 0 0; padding: 0; }
+.dashboard-watchlist a { color: var(--desk-accent); font-variant-numeric: tabular-nums; }
+.portfolio-allocation {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: .25rem .65rem;
+    padding: .65rem 1rem;
+    color: var(--desk-muted);
+    font-size: .875rem;
+}
+.portfolio-allocation label { grid-column: 1 / -1; }
+.portfolio-allocation meter { width: 100%; height: .75rem; }
+.portfolio-allocation meter::-webkit-meter-bar { background: var(--desk-bg); border-color: var(--desk-line); }
+.portfolio-allocation meter::-webkit-meter-optimum-value { background: var(--desk-accent); }
+.portfolio-allocation output { font-variant-numeric: tabular-nums; }
+.ss-body .reveal-up { opacity: 1; transform: none; animation: none; }
+.ss-body.workspace-pro .app-main { background: var(--desk-bg); color: var(--desk-ink); }
+.ss-body.workspace-pro {
+    --ink: var(--desk-ink);
+    --muted: var(--desk-muted);
+    --edge: var(--desk-line);
+    --accent: var(--desk-accent);
+    --accent-strong: var(--desk-accent);
+    --surface: var(--desk-panel);
+}
+.ss-body.workspace-pro :is(.pro-hero, .pro-stock-hero, .pro-hero-stat, .pro-panel, .pro-research-launch, .pro-watchlist-panel, .pro-intelligence-feed, .pro-calendar, .pro-attention, .pro-live-research, .pro-metrics > div, .pro-feed-item) {
+    background: var(--desk-panel); border: 1px solid var(--desk-line); color: var(--desk-ink);
+    border-radius: 8px; box-shadow: none;
+}
+.ss-body.workspace-pro :is(.pro-hero, .pro-stock-hero) { padding: 1rem 1.25rem; min-height: 0; }
+.ss-body.workspace-pro :is(.pro-hero, .pro-stock-hero)::before, .ss-body.workspace-pro .pro-hero::after { content: none; }
+.ss-body.workspace-pro :is(.pro-hero h2, .pro-stock-title h2) { font: 650 clamp(1.45rem, 2.8vw, 2.05rem)/1.2 system-ui, sans-serif; letter-spacing: -.025em; }
+.ss-body.workspace-pro :is(.pro-panel h3, .pro-live-heading h3, .pro-feed-heading h3, .pro-watchlist-panel h3, .pro-research-launch h3) { font: 650 1.05rem/1.35 system-ui, sans-serif; letter-spacing: normal; }
+.ss-body.workspace-pro :is(.pro-panel-kicker, .pro-mini-copy, .pro-lede, .pro-live-status) { color: var(--desk-muted); letter-spacing: 0; text-transform: none; }
+.ss-body.workspace-pro :is(.pro-price, .pro-metrics, .pro-hero-stat) { font-variant-numeric: tabular-nums; }
+.research-nav { display: flex; flex-wrap: wrap; gap: .3rem .85rem; border-bottom: 1px solid var(--desk-line); margin-bottom: 1rem; }
+.ss-body .research-nav a { display: block; padding: .55rem .25rem; color: var(--desk-accent); font-size: .875rem; }
+.research-nav a[aria-current='page'] { border-bottom: 2px solid currentColor; font-weight: 700; text-decoration: none; }
+.order-nav { margin: .6rem 0; }
+.order-review { width: min(29rem, calc(100% - 2rem)); border: 1px solid var(--desk-line); border-radius: 8px; padding: 1.4rem; color: var(--desk-ink); background: var(--desk-panel); }
+.order-review::backdrop { background: #11191899; }
+.order-review h2 { font-size: 1.2rem; }
+.order-review p { overflow-wrap: anywhere; }
+.research-chart { margin-bottom: 1rem; }
+.research-chart p, .chart-range { color: var(--desk-muted); font-size: .875rem; }
+.research-chart svg { display: block; width: 100%; height: clamp(7rem, 18vw, 12rem); }
+.research-chart polyline { stroke: var(--desk-accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.chart-range { display: flex; justify-content: space-between; gap: .65rem; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 800px) {
+    .ss-body .market-toolbar-inner { flex-wrap: wrap; }
+    .workspace-search { flex-basis: 100%; }
+    .ss-body .market-shortcuts { display: none; }
+    .ss-body .workspace-switcher { display: flex; }
+    .ss-body.workspace-pro :is(.pro-stock-grid, .pro-live-grid, .pro-grid-top) { grid-template-columns: minmax(0, 1fr); }
+}
+/* Flow: a portfolio ledger. Pro: a research notebook. */
+.ss-body { --desk-accent: #20564b; --desk-bg: #edf1ef; }
+.ss-body .sidebar-brand { gap: .65rem; }
+.sidebar-logo {
+    display: grid;
+    place-items: center;
+    width: 39px;
+    height: 39px;
+    flex: 0 0 39px;
+    overflow: hidden;
+    border-radius: 9px;
+    isolation: isolate;
+}
+.sidebar-logo img { display: block; width: 56px; height: 56px; max-width: none; position: absolute; }
+.ss-body .sidebar-logo { position: relative; }
+.ss-body .sidebar-brand .brand-variant {
+    background: none; border: 0; padding: 0; color: var(--desk-muted); letter-spacing: .06em;
+}
+
+.ss-body .app-main .card-metric-header .card-metric-header-title { color: var(--desk-ink) !important; }
+.ss-body .app-main .card-metric-header .card-metric-subtitle { color: var(--desk-muted) !important; }
+.ss-body .app-main .card-metric-header :is(.chip, .badge) { background: var(--desk-active); color: var(--desk-ink) !important; border-color: var(--desk-line); }
+.ss-body:not(.theme-dark, .workspace-pro) .performance-up { color: #126044 !important; }
+.ss-body:not(.theme-dark, .workspace-pro) .performance-down { color: #a12635 !important; }
+.ss-body .flow-workspace .flow-page-grid { background: var(--desk-panel); border: 1px solid var(--desk-line); }
+.ss-body .flow-workspace .flow-page-grid > .col-md-3 + .col-md-3 { border-left: 1px solid var(--desk-line); }
+.ss-body .flow-workspace .flow-page-grid > .col-md-3 > .summary-card { background: transparent; border: 0; }
+.ss-body .flow-workspace .summary-label { color: var(--desk-muted); text-transform: none; letter-spacing: 0; }
+.ss-body .flow-workspace .summary-value { font: 650 clamp(1.05rem, 2.1vw, 1.7rem)/1.35 system-ui; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.ss-body .flow-workspace .flow-holdings, .ss-body .flow-workspace .flow-side, .ss-body .flow-workspace .flow-benchmark { border-top: 1px solid var(--desk-line); }
+.ss-body .flow-workspace .flow-side { align-content: start; border-left: 1px solid var(--desk-line); gap: 0 !important; }
+.ss-body .flow-workspace :is(.flow-holdings, .flow-side) .card { border: 0; border-radius: 0 !important; }
+.ss-body .flow-workspace .flow-side .card + .card { border-top: 1px solid var(--desk-line); }
+.ss-body .flow-workspace .card-metric-header { padding: .75rem 1rem; }
+.ss-body .flow-workspace .flow-benchmark .dashboard-hero { border: 0; border-radius: 0 !important; }
+
+.ss-body.workspace-pro {
+    color-scheme: light;
+    --desk-ink: #202b37;
+    --desk-muted: #4e5d6b;
+    --desk-line: #d7dde4;
+    --desk-bg: #e8edf2;
+    --desk-panel: #fbfcfd;
+    --desk-accent: #184a77;
+    --desk-active: #e3edf5;
+    --ink-soft: var(--desk-ink);
+    --surface-strong: var(--desk-panel);
+    --edge-strong: #a1b0be;
+    --accent-soft: var(--desk-active);
+    background: var(--desk-bg);
+}
+.ss-body.workspace-pro .workspace-switcher a.is-active { background: var(--desk-active); color: var(--desk-accent); }
+.ss-body.workspace-pro .app-main-inner { width: 100%; }
+.research-desk { max-width: 91rem; margin-inline: auto; color: var(--desk-ink); }
+.research-desk a { color: var(--desk-accent); }
+.research-desk p { color: var(--desk-muted); }
+.desk-heading, .desk-section, .stock-desk .research-chart {
+    background: var(--desk-panel);
+    border-top: 2px solid var(--desk-accent);
+    padding: 1rem 1.15rem;
+}
+.desk-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem; }
+.desk-heading h2 { margin: 0; font: 500 clamp(1.9rem, 3.3vw, 2.85rem)/1.06 Georgia, serif; }
+.desk-heading p { margin: .3rem 0 0; }
+.desk-layout, .stock-columns { display: grid; grid-template-columns: minmax(0, 2.15fr) minmax(16rem, 1fr); gap: 1rem; }
+.desk-section { margin-bottom: 1rem; }
+.desk-section h3 { margin: 0 0 .65rem; font: 600 1.15rem/1.25 system-ui; }
+.desk-section-head, .desk-form, .desk-watchlist li { display: flex; gap: .55rem; align-items: center; }
+.desk-section-head, .desk-watchlist li { justify-content: space-between; }
+.desk-heading .desk-form { width: min(100%, 23rem); }
+.desk-form button { white-space: nowrap; }
+.desk-watchlist { padding: 0; margin: .65rem 0 0; list-style: none; }
+.desk-watchlist li, .desk-record, .desk-review, .desk-feed-row { padding: .65rem 0; border-top: 1px solid var(--desk-line); }
+.desk-record, .desk-review { display: grid; align-items: baseline; gap: .55rem; text-decoration: none; }
+.desk-record { grid-template-columns: 4.5rem 1fr auto; }
+.desk-review { grid-template-columns: auto 1fr; }
+.desk-review span { grid-column: 1 / -1; }
+.desk-record:hover, .desk-review:hover { background: var(--desk-active); }
+.desk-empty, .desk-status, .desk-source-label, .desk-feed-row p { font-size: .875rem; color: var(--desk-muted); }
+.desk-feed-row a { display: block; }
+.desk-feed-row p { margin-block: .35rem; }
+.desk-filters, .desk-feed-actions, .desk-feed-actions form { display: flex; flex-wrap: wrap; gap: .35rem; }
+.research-desk :is(.desk-filters, .desk-feed-actions) button, .desk-feed-actions input {
+    padding: .25rem .5rem;
+    border: 1px solid var(--desk-line);
+    background: var(--desk-panel);
+    color: var(--desk-ink);
+    border-radius: 4px;
+}
+.desk-filters { margin-bottom: .75rem; }
+.desk-filters button[aria-pressed="true"] { background: var(--desk-active); border-color: var(--desk-accent); }
+.stock-identity { display: flex; flex: 1; align-items: end; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
+.stock-identity h2 { margin-top: .35rem; }
+.ss-body.workspace-pro .stock-desk :is(.pro-panel, .pro-live-research, .pro-metrics > div, .pro-source-strip) {
+    border-radius: 0; background: var(--desk-panel); border: 0; box-shadow: none; color: var(--desk-ink);
+}
+.ss-body.workspace-pro .stock-desk :is(.pro-notes, .pro-personal, .pro-ai-brief) { border-top: 2px solid var(--desk-accent); }
+.ss-body.workspace-pro .stock-desk :is(.pro-panel h3, .pro-live-heading h3, .pro-price strong, .pro-price small) { color: var(--desk-ink); }
+.ss-body.workspace-pro .stock-desk :is(input, textarea, .pro-ai-actions button, [data-intel-refresh]) {
+    background: var(--desk-panel); color: var(--desk-ink); border-color: var(--desk-line); box-shadow: none;
+}
+.ss-body.workspace-pro .stock-desk :is(.pro-fact-grid > div, .pro-macro-list > div, .pro-ai-output > section) {
+    background: var(--desk-active); color: var(--desk-ink); border-color: var(--desk-line);
+}
+.ss-body.workspace-pro .stock-desk .pro-live-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ss-body.workspace-pro .stock-desk .pro-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ss-body.workspace-pro .stock-desk .pro-stock-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ss-body.workspace-pro .stock-desk .pro-community { grid-column: auto; }
+.stock-sidebar article + article { margin-top: 1rem; }
+.stock-desk .stock-jump { padding-inline: .6rem; background: var(--desk-panel); }
+.ss-body.workspace-pro .research-desk .performance-up { color: #126044 !important; }
+.ss-body.workspace-pro .research-desk .performance-down { color: #a12635 !important; }
+@media (max-width: 1020px) {
+    .desk-layout, .stock-columns { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 767px) {
+    .ss-body .flow-workspace .flow-page-grid > .col-md-3 + .col-md-3 { border-left: 0; border-top: 1px solid var(--desk-line); }
+    .ss-body.workspace-pro .stock-desk :is(.pro-live-grid, .pro-stock-grid) { grid-template-columns: minmax(0, 1fr); }
+    .desk-record { grid-template-columns: auto 1fr; }
+    .desk-record time { grid-column: 2; }
+}
+
+
+/* Pro stock report */
+.stock-launcher .desk-layout { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); }
+.desk-stock-link { flex: 1; padding: .2rem .3rem; text-decoration: none; }
+.desk-stock-link strong { display: block; font-size: 1.12rem; }
+.desk-stock-link span { color: var(--desk-muted); font-size: .85rem; }
+.desk-watchlist li:has(.desk-stock-link):hover { background: var(--desk-active); }
+.desk-updates > summary { font-weight: 650; cursor: pointer; }
+.desk-updates[open] > summary { margin-bottom: .75rem; }
+.desk-feed-actions details { padding: .2rem .4rem; font-size: .9rem; }
+.desk-feed-actions details form { margin-top: .4rem; }
+.ss-body.workspace-pro .stock-report { max-width: 91rem; margin-inline: auto; color: var(--desk-ink); }
+.stock-report :is(h2, h3, h4, h5) { color: var(--desk-ink); }
+.stock-report :is(p, small, dt) { color: var(--desk-muted); }
+.stock-report a { color: var(--desk-accent); }
+.report-heading { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem 1.5rem; background: var(--desk-panel); padding: 1.25rem; }
+.report-heading h2 { margin: .25rem 0 0; font-size: clamp(1.75rem, 3vw, 2.6rem); line-height: 1.1; }
+.report-heading p { margin: .2rem 0 0; }
+.report-quote { margin-left: auto; display: grid; grid-template-columns: auto auto; align-items: baseline; gap: .15rem .65rem; font-variant-numeric: tabular-nums; }
+.report-quote strong { font-size: 1.45rem; }
+.report-quote small { grid-column: 1 / -1; }
+.report-links { display: flex; flex-wrap: wrap; gap: .45rem 1rem; padding-inline: .75rem; }
+.report-section { padding: 1.15rem; margin-bottom: .9rem; background: var(--desk-panel); border: 1px solid var(--desk-line); scroll-margin-top: 1rem; }
+.report-section h3 { margin: 0 0 .6rem; font-size: 1.25rem; }
+.report-section h4 { font-size: 1rem; margin: .35rem 0 .6rem; }
+.report-section-head { display: flex; gap: .75rem; justify-content: space-between; align-items: baseline; flex-wrap: wrap; }
+.report-grid, .report-ratio-grid { display: grid; gap: 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.report-ratio-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.report-chart { margin: .45rem 0; border: 1px solid var(--desk-line); padding: .75rem; min-width: 0; }
+.report-chart figcaption { font-weight: 650; }
+.report-chart p { margin: .25rem 0 .45rem; font-size: .85rem; }
+.report-chart svg { width: 100%; height: auto; display: block; }
+.report-chart svg[hidden] { display: none; }
+.report-chart svg text { fill: var(--desk-muted); font: 12px system-ui, sans-serif; }
+.report-line { stroke: var(--desk-accent); stroke-width: 2; }
+.report-grid-line { stroke: var(--desk-line); }
+.report-bar { fill: var(--desk-accent); }
+.report-chart-dates { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .3rem .6rem; font-size: .73rem; color: var(--desk-muted); }
+.report-ranges { display: flex; gap: .3rem; }
+.report-ranges button { border: 1px solid var(--desk-line); background: var(--desk-panel); border-radius: 4px; color: var(--desk-ink); padding: .3rem .5rem; }
+.report-ranges [aria-pressed="true"] { background: var(--desk-active); border-color: var(--desk-accent); }
+.report-quote-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .35rem 1rem; margin: .7rem 0 0; }
+.report-quote-stats > div, .report-ratio-grid dl > div { display: flex; justify-content: space-between; gap: .5rem; border-bottom: 1px solid var(--desk-line); padding: .4rem 0; font-size: .86rem; }
+.stock-report dt { font-weight: 500; }
+.stock-report dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.report-table { overflow-x: auto; }
+.stock-report [data-evidence] { margin: 0 0 .7rem; padding: 0; list-style: none; }
+.stock-report [data-evidence] li { padding: .4rem 0; border-bottom: 1px solid var(--desk-line); }
+.stock-report [data-evidence] small { display: block; }
+.report-notes { display: grid; gap: .5rem; }
+.report-notes textarea { min-height: 3rem; }
+.report-notes label span { color: var(--desk-muted); font-weight: 400; }
+.report-notes button { justify-self: start; }
+.report-ai-actions { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .75rem; }
+@media (max-width: 1050px) {
+    .stock-launcher .desk-layout, .report-ratio-grid { grid-template-columns: minmax(0, 1fr); }
+    .report-quote-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+    .report-grid, .report-quote-stats { grid-template-columns: minmax(0, 1fr); }
+    .report-quote { margin-left: 0; }
+    .stock-launcher .desk-section-head { flex-wrap: wrap; }
+}
+
+.report-factor { display: grid; grid-template-columns: minmax(10rem, 1fr) minmax(4rem, 1fr) auto; align-items: center; gap: .6rem; padding-block: .45rem; border-bottom: 1px solid var(--desk-line); }
+.report-factor progress { width: 100%; accent-color: var(--desk-accent); }
+.report-factor progress[hidden] { display: block; visibility: hidden; }
+.report-headline-grade { padding-block: .6rem; border-bottom: 1px solid var(--desk-line); }
+.report-headline-grade p { margin: .2rem 0; }
+@media(max-width: 540px) { .report-factor { grid-template-columns: minmax(0, 1fr) auto; } .report-factor progress { grid-row: 2; grid-column: 1 / -1; } }
+
+/* Pro quote report: Flow's quote hierarchy with deeper research controls. */
+.pro-quote-report { --report-glow: #79d8b0; --report-soft: #132c27; }
+.pro-quote-report :is(h1, h2, h3, h4) { letter-spacing: -.025em; }
+.pro-quote-report .report-eyebrow { display: block; margin-bottom: .45rem; color: var(--report-glow); font: 600 .69rem/1.3 'IBM Plex Mono', monospace; letter-spacing: .13em; text-transform: uppercase; }
+.report-search-card, .report-hero { border: 1px solid var(--desk-line); background: var(--desk-panel); }
+.report-search-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(17rem, .9fr); gap: 1rem 2rem; align-items: center; padding: 1.2rem 1.4rem; margin-bottom: .8rem; }
+.report-search-card h2 { font-size: 1.32rem; margin: 0 0 .22rem; }
+.report-search-card p, .report-search-card small { margin: 0; color: var(--desk-muted); }
+.report-search-area { position: relative; min-width: 0; }
+.report-search-form { display: flex; gap: .45rem; }
+.report-search-form .form-control { min-width: 0; }
+.report-search-form .btn { white-space: nowrap; }
+.report-search-area > small { display: block; margin-top: .42rem; }
+.report-search-results { position: absolute; top: calc(100% - .35rem); left: 0; right: 0; z-index: 12; max-height: 15rem; overflow: auto; border: 1px solid var(--desk-line); background: var(--desk-panel); box-shadow: 0 20px 40px #0005; }
+.report-search-results a { display: flex; justify-content: space-between; gap: .6rem; padding: .55rem .75rem; text-decoration: none; border-bottom: 1px solid var(--desk-line); }
+.report-search-results a:hover, .report-search-results a:focus { background: var(--desk-active); }
+.report-search-results small { color: var(--desk-muted); }
+.report-hero { margin-bottom: .75rem; padding: clamp(1rem, 2.5vw, 1.7rem); background: radial-gradient(circle at 87% -30%, #1d5845 0, transparent 34%), var(--desk-panel); }
+.report-hero-top, .report-hero-bottom { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem 2rem; }
+.report-back { display: inline-block; margin-bottom: .9rem; font-size: .83rem; text-decoration: none; }
+.report-symbol-row { display: flex; align-items: center; gap: .65rem; }
+.report-symbol { font: 700 clamp(1.9rem, 4vw, 3rem)/1 'IBM Plex Mono', monospace; color: var(--desk-ink); }
+.report-market-tag, .report-calculation-tag { padding: .25rem .45rem; border: 1px solid var(--desk-line); color: var(--desk-muted); font: 600 .7rem/1.3 'IBM Plex Mono', monospace; text-transform: uppercase; }
+.report-identity h1 { margin: .55rem 0 .1rem; font-size: clamp(1rem, 1.8vw, 1.35rem); font-weight: 500; }
+.report-identity p { margin: 0; font-size: .84rem; }
+.report-hero-price { display: grid; justify-items: end; text-align: right; font-variant-numeric: tabular-nums; }
+.report-hero-price strong { color: var(--desk-ink); font: 700 clamp(1.75rem, 4vw, 2.9rem)/1.1 'IBM Plex Mono', monospace; }
+.report-hero-price [data-change] { font: 700 1rem 'IBM Plex Mono', monospace; }
+.report-hero-price small { font-size: .74rem; }
+.report-hero-bottom { align-items: end; border-top: 1px solid var(--desk-line); padding-top: 1rem; margin-top: 1.3rem; }
+.report-hero-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .8rem 1.5rem; flex: 1; margin: 0; }
+.report-hero-stats dt { font-size: .7rem; text-transform: uppercase; letter-spacing: .09em; }
+.report-hero-stats dd { margin: .22rem 0 0; color: var(--desk-ink); font: 600 .95rem 'IBM Plex Mono', monospace; text-align: left; }
+.report-section-nav { position: sticky; top: 0; z-index: 10; display: flex; gap: 0; overflow-x: auto; flex-wrap: nowrap; margin-bottom: 0; background: var(--desk-panel); border: 1px solid var(--desk-line); scrollbar-width: thin; }
+.report-section-nav a { flex: 1 0 auto; min-width: 7.4rem; display: grid !important; gap: .12rem; padding: .65rem .75rem !important; border-right: 1px solid var(--desk-line); text-decoration: none; white-space: nowrap; }
+.report-section-nav a:hover { background: var(--desk-active); }
+.report-section-nav a:last-child { border-right: 0; }
+.report-section-nav a small { color: var(--desk-muted); font: 500 .66rem 'IBM Plex Mono', monospace; }
+.report-section-nav a[data-state='available'] small { color: var(--report-glow); }
+.report-section-nav a[data-state='partial'] small { color: #e1b76f; }
+.report-section-nav a[data-state='unavailable'] small { color: #dc928f; }
+.report-section-nav a[data-state='available'] small::before, .report-section-nav a[data-state='partial'] small::before, .report-section-nav a[data-state='unavailable'] small::before { content: ''; display: inline-block; width: .42rem; height: .42rem; margin-right: .38rem; border-radius: 50%; background: currentColor; vertical-align: .06rem; }
+.report-coverage-line { display: flex; justify-content: space-between; gap: 1rem; padding: .5rem .75rem; color: var(--desk-muted); font: .75rem 'IBM Plex Mono', monospace; }
+.report-load-status { margin: 0 0 .75rem; padding: .65rem .85rem; border-left: 3px solid var(--desk-accent); background: var(--desk-panel); font-size: .82rem; }
+.report-feature-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(16rem, .8fr); gap: .8rem; align-items: start; }
+.report-feature-grid .report-section { margin-bottom: .8rem; }
+.report-section-head p { margin: -.3rem 0 .7rem; font-size: .83rem; }
+.report-chart-toolbar { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .5rem; align-items: center; margin: .4rem 0 .75rem; }
+.report-chart-toolbar span, .report-chart-caption { color: var(--desk-muted); font-size: .75rem; }
+.report-advanced-chart { min-height: 24rem; }
+.report-chart-fallback { display: grid; grid-template-columns: 1fr 1fr; gap: .65rem; }
+.report-chart-fallback[hidden], .report-advanced-chart[hidden] { display: none; }
+.report-chart-caption { margin: .4rem 0 .8rem; }
+.report-secondary-charts { margin-top: 1.1rem; padding-top: 1rem; border-top: 1px solid var(--desk-line); }
+.report-market-sidebar { display: grid; gap: .8rem; }
+.report-market-sidebar .report-section { margin: 0; }
+.report-market-sidebar .report-quote-stats { grid-template-columns: 1fr; gap: .1rem; }
+.report-market-sidebar .report-quote-stats > div, .report-context-stats > div { display: flex; justify-content: space-between; gap: .7rem; padding: .48rem 0; border-bottom: 1px solid var(--desk-line); font-size: .8rem; }
+.report-market-sidebar dd { max-width: 55%; overflow-wrap: anywhere; }
+.report-context-stats { margin: 0; }
+.report-context-stats dt { color: var(--desk-muted); }
+.report-context-stats dd { margin: 0; color: var(--desk-ink); text-align: right; }
+.report-range-track { height: .4rem; margin-top: 1rem; overflow: hidden; background: var(--desk-line); }
+.report-range-track span { display: block; width: 0; height: 100%; background: var(--report-glow); }
+.report-market-sidebar p { margin: .55rem 0 0; font-size: .76rem; }
+.report-company-details { margin-top: 1rem; padding-top: .7rem; border-top: 1px solid var(--desk-line); font-size: .82rem; }
+.report-company-details summary, .report-table-details summary, .report-unverified summary { cursor: pointer; color: var(--desk-accent); font-weight: 600; }
+.report-study-controls { display: flex; flex-wrap: wrap; gap: .4rem; margin: .6rem 0 .8rem; }
+.report-study-controls button { border: 1px solid var(--desk-line); background: transparent; color: var(--desk-ink); padding: .4rem .65rem; font: 600 .74rem 'IBM Plex Mono', monospace; }
+.report-study-controls button[aria-pressed='true'] { border-color: var(--desk-accent); background: var(--desk-active); color: var(--desk-accent); }
+.report-indicator-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .5rem; margin-top: .8rem; }
+.report-indicator-grid > div { min-width: 0; padding: .7rem; border: 1px solid var(--desk-line); background: var(--desk-bg); }
+.report-indicator-grid small { display: block; margin-bottom: .2rem; font-size: .68rem; }
+.report-indicator-grid strong { display: block; font: 600 1rem 'IBM Plex Mono', monospace; }
+.report-study-panes { display: grid; gap: .7rem; margin-top: 1rem; }
+.report-study-panes > div { border: 1px solid var(--desk-line); padding: .7rem; }
+.report-study-panes > div[hidden] { display: none; }
+.report-study-panes h4 { margin: 0 0 .4rem; }
+.report-study-panes [data-study-chart] { min-height: 11rem; }
+.report-ratio-grid > section { border: 1px solid var(--desk-line); padding: .8rem; min-width: 0; }
+.report-ratio-grid dl { margin: 0; }
+.report-table-details { margin-top: 1rem; }
+.report-table-details .report-table { margin-top: .7rem; }
+.report-evidence-grid > div { min-width: 0; border: 1px solid var(--desk-line); padding: .8rem; }
+.report-evidence-grid [data-evidence] { max-height: 20rem; overflow-y: auto; }
+.report-unverified { margin-top: 1rem; padding: .85rem; border: 1px dashed var(--desk-line); }
+.report-unverified p { font-size: .79rem; }
+.report-notes-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.report-notes-grid .report-notes-wide { grid-column: 1 / -1; }
+.report-notes-grid button { grid-column: 1 / -1; }
+.report-ai-panel { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--desk-line); }
+.report-ai-panel [data-brief-output] { padding: .85rem; border: 1px solid var(--desk-line); background: var(--desk-bg); }
+.report-ai-panel [data-brief-output] h5 { margin-top: .9rem; }
+.report-ai-panel [data-brief-output] ul { margin-bottom: .5rem; }
+.pro-quote-report :is(#overview, #technicals, #ratios, #events, #evidence, #notes, #score, #sources) { scroll-margin-top: 5rem; }
+@media (max-width: 1050px) { .report-feature-grid { grid-template-columns: minmax(0, 1fr); } .report-market-sidebar { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .report-search-card { grid-template-columns: 1fr; } .report-hero-top, .report-hero-bottom { flex-direction: column; align-items: stretch; } .report-hero-price { justify-items: start; text-align: left; } .report-hero-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; } .report-market-sidebar { grid-template-columns: 1fr; } .report-chart-fallback { grid-template-columns: 1fr; } .report-advanced-chart { min-height: 19rem; } .report-notes-grid { grid-template-columns: 1fr; } .report-notes-grid .report-notes-wide { grid-column: 1; } }
+@media (max-width: 480px) { .report-search-form { flex-direction: column; } .report-search-form .btn { align-self: stretch; } .report-coverage-line { flex-direction: column; gap: .2rem; } .report-section-nav a { min-width: 6.5rem; } }

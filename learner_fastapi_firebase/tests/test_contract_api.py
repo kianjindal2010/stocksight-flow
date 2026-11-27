@@ -185,9 +185,9 @@ def test_portfolio_performance_today_return_includes_open_position_day_move(clie
     )
     assert buy.status_code == 200
 
-    # Home route triggers price refresh and stores daily mark-to-market fields.
-    home = client.get("/", headers=auth_headers)
-    assert home.status_code == 200
+    # The dashboard refreshes price marks after its page opens.
+    summary = client.get("/api/dashboard/summary", headers=auth_headers)
+    assert summary.status_code == 200
 
     perf = client.get("/api/portfolio/performance", headers=auth_headers)
     assert perf.status_code == 200
@@ -239,9 +239,9 @@ def test_dashboard_pl_pct_uses_price_vs_avg_fallback(client, auth_headers):
         "currency": "USD",
     }
 
-    home = client.get("/", headers=auth_headers)
-    assert home.status_code == 200
-    assert "+20.00%" in home.text
+    summary = client.get("/api/dashboard/summary", headers=auth_headers)
+    assert summary.status_code == 200
+    assert summary.json()["positions"][0]["total_change_pct"] == 20.0
 
 
 def test_watchlist_crud(client, auth_headers):
@@ -295,8 +295,11 @@ def test_dashboard_refreshes_position_prices_from_quote_feed(client, auth_header
 
     response = client.get("/", headers=auth_headers)
     assert response.status_code == 200
-    assert "$150.00" in response.text
-    assert "$10100.00" in response.text
+    assert "$150.00" not in response.text
+    summary = client.get("/api/dashboard/summary", headers=auth_headers)
+    assert summary.status_code == 200
+    assert summary.json()["positions"][0]["last_price"] == 150.0
+    assert summary.json()["portfolio"]["total_value"] == 10100.0
 
 
 def test_dashboard_performer_cards_use_daily_change(client, auth_headers):
@@ -336,17 +339,13 @@ def test_dashboard_performer_cards_use_daily_change(client, auth_headers):
 
     client.app.state.market_data.quote = quote  # type: ignore[assignment]
 
-    response = client.get("/", headers=auth_headers)
+    response = client.get("/api/dashboard/summary", headers=auth_headers)
     assert response.status_code == 200
-    top_section = response.text.split("Top Performers", 1)[1].split("Worst Performers", 1)[0]
-    worst_section = response.text.split("Worst Performers", 1)[1].split("AI Coach", 1)[0]
-
-    assert "+3.00%" in top_section
-    assert "+1.00%" in top_section
-    assert "-1.00%" not in top_section
-    assert "-2.00%" in worst_section
-    assert "-1.00%" in worst_section
-    assert "+1.00%" not in worst_section
+    data = response.json()
+    top = {row["symbol"]: row["day_change_pct"] for row in data["top_positions"]}
+    worst = {row["symbol"]: row["day_change_pct"] for row in data["worst_positions"]}
+    assert top == {"WIN": 3.0, "UPLOSS": 1.0}
+    assert worst == {"LOSS": -2.0, "DOWNGAIN": -1.0}
 
 
 def test_modules_page_completion_updates_learning_progress(client, auth_headers):
@@ -419,3 +418,61 @@ def test_absent_pro_admin_routes(client):
     for path in ["/api/admin", "/api/team", "/api/subscriptions", "/api/pricing"]:
         response = client.get(path)
         assert response.status_code == 404
+
+
+def test_watchlist_page_loads_before_quotes(client, auth_headers, monkeypatch):
+    repo = client.app.state.repo
+    repo.add_symbol_to_default_watchlist("test-user", "AAPL")
+    calls = []
+
+    def quote(symbol, market):
+        calls.append((symbol, market))
+        return {"name": "Apple", "price": 123.0, "currency": "USD", "change_pct": 2.0}
+
+    monkeypatch.setattr(client.app.state.market_data, "quote", quote)
+    page = client.get("/watchlist", headers=auth_headers)
+    assert page.status_code == 200
+    assert 'data-watch-symbol="AAPL"' in page.text
+    assert not calls
+
+    quotes = client.get("/api/watchlist/quotes", headers=auth_headers)
+    assert quotes.status_code == 200
+    assert quotes.json()["AAPL"]["price"] == 123.0
+    assert calls == [("AAPL", "US")]
+    assert client.get("/api/watchlist/quotes", headers=auth_headers).json() == quotes.json()
+    assert calls == [("AAPL", "US")]
+
+
+def test_reopening_dashboard_reuses_data_until_the_portfolio_changes(client, auth_headers, monkeypatch):
+    state = client.app.state
+    calls = {"coach": 0, "benchmark": 0}
+    original_coach = state.ai_advisor.dashboard_brief
+    original_benchmark = state.market_data.benchmark_quote
+
+    def coach(*args, **kwargs):
+        calls["coach"] += 1
+        return original_coach(*args, **kwargs)
+
+    def benchmark(*args, **kwargs):
+        calls["benchmark"] += 1
+        return original_benchmark(*args, **kwargs)
+
+    monkeypatch.setattr(state.ai_advisor, "dashboard_brief", coach)
+    monkeypatch.setattr(state.market_data, "benchmark_quote", benchmark)
+    assert client.get("/", headers=auth_headers).status_code == 200
+    for endpoint in ("/api/dashboard/summary", "/api/ai/dashboard-brief"):
+        assert client.get(endpoint, headers=auth_headers).status_code == 200
+    cached_calls = calls.copy()
+    assert client.get("/ai-chat", headers=auth_headers).status_code == 200
+    home = client.get("/", headers=auth_headers)
+    assert "Test coach summary" in home.text
+    for endpoint in ("/api/dashboard/summary", "/api/ai/dashboard-brief"):
+        assert client.get(endpoint, headers=auth_headers).status_code == 200
+    assert calls == cached_calls
+
+    state.repo.deposit_cash("test-user", "US", 25.0)
+    summary = client.get("/api/dashboard/summary", headers=auth_headers)
+    assert summary.json()["portfolio"]["cash"] == 10025.0
+    assert client.get("/api/ai/dashboard-brief", headers=auth_headers).status_code == 200
+    assert calls["benchmark"] > cached_calls["benchmark"]
+    assert calls["coach"] == cached_calls["coach"] + 1

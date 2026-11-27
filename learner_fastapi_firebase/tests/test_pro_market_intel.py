@@ -16,6 +16,15 @@ class _Market:
     def market_mood(self, market): return {}
 
 
+def test_explicit_refresh_bypasses_snapshot_cache(monkeypatch):
+    market = _Market()
+    service = ProMarketIntelService(market)
+    assert service.snapshot("u1", "AAPL", "US")["quote"]["price"] == 10
+    monkeypatch.setattr(market, "quote", lambda symbol, market: {"price": 15})
+    assert service.snapshot("u1", "AAPL", "US")["quote"]["price"] == 10
+    assert service.snapshot("u1", "AAPL", "US", refresh=True)["quote"]["price"] == 15
+
+
 def test_pro_snapshot_has_baseline_when_hosted_sources_are_not_configured():
     service = ProMarketIntelService(_Market())
     snapshot = service.snapshot("u1", "aapl", "US")

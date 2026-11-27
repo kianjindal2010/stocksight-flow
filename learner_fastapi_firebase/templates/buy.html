@@ -6,11 +6,15 @@
 <div class="trade-page">
     <div class="card trade-card">
         <div class="trade-card-header">
-            <h2 class="trade-title mb-1">Buy Shares</h2>
-            <p class="trade-subtitle mb-0">Search by ticker or company name. We'll resolve it for you live.</p>
+            <h2 class="trade-title mb-1">Paper order</h2>
+            <nav class="research-nav order-nav" aria-label="Order side">
+                <a href="/buy" aria-current="page">Buy</a>
+                <a href="/sell">Sell</a>
+            </nav>
+            <p class="trade-subtitle mb-0">Enter a ticker or company name for the selected market.</p>
         </div>
         <div class="trade-card-body">
-            <form method="post" action="/buy">
+            <form method="post" action="/buy" data-paper-order="buy">
                 <div class="mb-3">
                     <label class="form-label fw-semibold">Stock</label>
                     <input class="form-control" name="symbol" placeholder="e.g. Apple or AAPL" required>
@@ -60,7 +64,7 @@
                     </div>
                 </fieldset>
                 <div class="d-flex gap-2">
-                    <button class="btn btn-primary" type="submit">Place Buy Order</button>
+                    <button class="btn btn-primary" type="submit">Review buy order</button>
                     <a class="btn btn-outline-secondary" href="/">Back to Dashboard</a>
                 </div>
             </form>

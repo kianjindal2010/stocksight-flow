@@ -29,6 +29,7 @@ from ..schemas.auth import (
 )
 from ..appwrite import (
     AppwriteAuthError,
+    AppwriteReadOnlyError,
     complete_password_recovery as appwrite_complete_password_recovery,
     create_account as appwrite_create_account,
     create_email_session as appwrite_create_email_session,
@@ -88,6 +89,8 @@ def signup(payload: SignupRequest, request: Request, response: Response):
             _auth_cookie(response, session)
             _remember_appwrite_session(request, session)
             return AuthResponse(uid=uid, email=payload.email, id_token=session, expires_in=3600)
+        except AppwriteReadOnlyError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         except AppwriteAuthError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
@@ -139,6 +142,8 @@ def login(payload: LoginRequest, request: Request, response: Response):
             _auth_cookie(response, session)
             _remember_appwrite_session(request, session)
             return AuthResponse(uid=uid, email=payload.email, id_token=session, expires_in=3600)
+        except AppwriteReadOnlyError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         except AppwriteAuthError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
         except Exception as exc:
@@ -278,6 +283,8 @@ def request_password_reset(payload: PasswordResetRequest, request: Request):
         reset_url = f"http://{settings.app_host}:{settings.app_port}/auth/password-reset"
         try:
             appwrite_create_password_recovery(settings, str(payload.email), reset_url)
+        except AppwriteReadOnlyError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         except AppwriteAuthError as exc:
             # Return a deliberately generic response to avoid confirming which
             # accounts exist, while logging the provider failure for support.
@@ -297,6 +304,8 @@ def confirm_password_reset(payload: PasswordResetConfirmRequest, request: Reques
         raise HTTPException(status_code=400, detail="Password reset is not available in this configuration.")
     try:
         appwrite_complete_password_recovery(settings, payload.user_id, payload.secret, payload.password)
+    except AppwriteReadOnlyError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except AppwriteAuthError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"status": "ok"}

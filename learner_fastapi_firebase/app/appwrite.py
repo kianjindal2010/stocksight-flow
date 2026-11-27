@@ -12,6 +12,10 @@ class AppwriteAuthError(RuntimeError):
     pass
 
 
+class AppwriteReadOnlyError(AppwriteAuthError):
+    pass
+
+
 def _headers(settings: Settings, session: str = "") -> dict[str, str]:
     headers = {"X-Appwrite-Project": settings.appwrite_project_id, "Content-Type": "application/json"}
     if session:
@@ -30,6 +34,10 @@ def _error(response: requests.Response) -> AppwriteAuthError:
         payload = {}
     error_type = str(payload.get("type") or "")
     detail = str(payload.get("message") or error_type or response.text or "")
+    if error_type == "team_read_only":
+        return AppwriteReadOnlyError(
+            "StockSight accounts are temporarily unavailable because Appwrite has put the project in read-only mode."
+        )
 
     # Appwrite deliberately uses the same response for an unknown address and
     # a wrong password. Keep that privacy property while giving people who

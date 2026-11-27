@@ -20,35 +20,55 @@
                         <th>Symbol</th>
                         <th>Name</th>
                         <th>Last Price</th>
-                        <th>1W</th>
-                        <th>1M</th>
-                        <th>Day's Chg</th>
+                        <th>Daily change</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for row in watch_rows %}
-                    <tr>
-                        <td><a href="/quote?symbol={{ row.symbol }}">{{ row.symbol }}</a></td>
-                        <td>{{ row.name }}</td>
-                        <td>Rs.{{ "%.2f"|format(row.price or 0) }}</td>
-                        <td class="{% if row.week_change >= 0 %}performance-up{% else %}performance-down{% endif %}">{{ "%+.2f"|format(row.week_change or 0) }}%</td>
-                        <td class="{% if row.month_change >= 0 %}performance-up{% else %}performance-down{% endif %}">{{ "%+.2f"|format(row.month_change or 0) }}%</td>
-                        <td class="{% if row.day_change >= 0 %}performance-up{% else %}performance-down{% endif %}">{{ "%+.2f"|format(row.day_change or 0) }}%</td>
+                    {% for symbol in watchlist.symbols %}
+                    <tr data-watch-symbol="{{ symbol }}">
+                        <td><a href="/quote?q={{ symbol|urlencode }}">{{ symbol }}</a></td>
+                        <td data-watch-name></td>
+                        <td data-watch-price>Loading</td>
+                        <td data-watch-change></td>
                         <td>
                             <form method="post" action="/watchlist/remove">
-                                <input type="hidden" name="symbol" value="{{ row.symbol }}">
+                                <input type="hidden" name="symbol" value="{{ symbol }}">
                                 <button class="btn btn-sm btn-outline-danger" type="submit">Remove</button>
                             </form>
                         </td>
                     </tr>
                     {% endfor %}
-                    {% if not watch_rows %}
-                    <tr><td colspan="7" class="text-muted">Watchlist is empty. Add a symbol to start tracking.</td></tr>
+                    {% if not watchlist.symbols %}
+                    <tr><td colspan="5" class="text-muted">Watchlist is empty. Add a symbol to start tracking.</td></tr>
                     {% endif %}
                 </tbody>
             </table>
         </div>
     </div>
 </div>
+<script>
+(async () => {
+    const rows = [...document.querySelectorAll('[data-watch-symbol]')];
+    if (!rows.length) return;
+    let quotes = {};
+    try {
+        const response = await fetch('/api/watchlist/quotes');
+        if (response.ok) quotes = await response.json();
+    } catch (error) {
+        console.warn('Watchlist quotes unavailable', error);
+    }
+    for (const row of rows) {
+        const quote = quotes[row.dataset.watchSymbol] || {};
+        row.querySelector('[data-watch-name]').textContent = quote.name || '';
+        row.querySelector('[data-watch-price]').textContent = Number.isFinite(quote.price) && quote.price > 0
+            ? [quote.currency, quote.price.toFixed(2)].filter(Boolean).join(' ') : 'Unavailable';
+        const change = row.querySelector('[data-watch-change]');
+        if (Number.isFinite(quote.change_pct) && quote.price > 0) {
+            change.textContent = (quote.change_pct >= 0 ? '+' : '') + quote.change_pct.toFixed(2) + '%';
+            change.classList.add(quote.change_pct >= 0 ? 'performance-up' : 'performance-down');
+        }
+    }
+})();
+</script>
 {% endblock %}

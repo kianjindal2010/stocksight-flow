@@ -84,7 +84,7 @@ class ProMarketIntelService:
         cache_key = f"{uid}:{market}:{symbol}:{'full' if include_hosted else 'baseline'}"
         with self._lock:
             cached = self._cache.get(cache_key)
-            if cached and cached[0] > time.monotonic():
+            if not refresh and cached and cached[0] > time.monotonic():
                 return cached[1]
 
         # Local and hosted sources are independent.  Fan them out so a slow
@@ -109,11 +109,11 @@ class ProMarketIntelService:
                     values[name] = future.result()
                 except Exception as exc:
                     logger.info("pro_intel_source_unavailable symbol=%s source=%s error=%s", symbol, name, exc)
-                    values[name] = {} if name in {"history", "actions", "news", "risk", "forecast", "benchmark", "mood", "hosted"} else {"symbol": symbol}
+                    values[name] = [] if name == "news" else {}
         quote = values["quote"]
         history = values["history"]
         actions = values["actions"]
-        news = values["news"]
+        news = values["news"] or []
         risk = values["risk"]
         forecast = values["forecast"]
         benchmark = values["benchmark"]

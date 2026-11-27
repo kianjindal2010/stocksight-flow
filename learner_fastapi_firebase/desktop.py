@@ -7,6 +7,7 @@ import socket
 import threading
 import time
 import webbrowser
+from html import escape
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -24,17 +25,28 @@ class DesktopApi:
         return bool(webbrowser.open(url, new=1))
 
 
-def _app_dir() -> Path:
-    return Path(os.getenv("STOCKSIGHT_LOG_DIR", Path.cwd())).resolve()
+def _log_dir() -> Path:
+    configured = os.getenv("STOCKSIGHT_LOG_DIR")
+    if configured:
+        return Path(configured).expanduser()
+    local_app_data = Path(os.getenv("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+    return local_app_data / "StockSight Learner"
 
 
-def _configure_logging() -> None:
-    log_path = _app_dir() / "stocksight_desktop.log"
-    logging.basicConfig(
-        filename=str(log_path),
-        level=os.getenv("LOG_LEVEL", "INFO").upper(),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+def _configure_logging() -> Path | None:
+    options = {
+        "level": os.getenv("LOG_LEVEL", "INFO").upper(),
+        "format": "%(asctime)s %(levelname)s %(name)s: %(message)s",
+    }
+    try:
+        log_path = _log_dir().resolve() / "stocksight_desktop.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        logging.basicConfig(filename=log_path, encoding="utf-8", **options)
+    except OSError as exc:
+        logging.basicConfig(**options)
+        logging.getLogger(__name__).warning("Desktop log file is unavailable: %s", exc)
+        return None
+    return log_path
 
 
 def _port_available(host: str, port: int) -> bool:
@@ -62,7 +74,12 @@ def _wait_for_server(url: str, timeout_seconds: float = 30.0) -> bool:
     return False
 
 
-def _error_html(url: str) -> str:
+def _error_html(url: str, log_path: Path | None) -> str:
+    log_note = (
+        f" Details are written to <code>{escape(str(log_path))}</code>."
+        if log_path is not None
+        else ""
+    )
     return f"""
     <!doctype html>
     <html lang="en">
@@ -79,8 +96,8 @@ def _error_html(url: str) -> str:
     <body>
         <main>
             <h1>StockSight could not finish starting.</h1>
-            <p>The local app server did not respond at <code>{url}</code>.</p>
-            <p>Close this window and launch StockSight again. Details are written to <code>stocksight_desktop.log</code> beside the app.</p>
+            <p>The local app server did not respond at <code>{escape(url)}</code>.</p>
+            <p>Close this window and launch StockSight again.{log_note}</p>
         </main>
     </body>
     </html>
@@ -88,7 +105,7 @@ def _error_html(url: str) -> str:
 
 
 def main() -> None:
-    _configure_logging()
+    log_path = _configure_logging()
     # The public Appwrite endpoint and project ID are built into the desktop
     # app. Users never need to create a Firebase configuration file.
     os.environ.setdefault("APPWRITE_ENDPOINT", "https://sgp.cloud.appwrite.io/v1")
@@ -150,7 +167,7 @@ def main() -> None:
         logging.error("StockSight server failed to respond at %s", url)
         window = webview.create_window(
             "StockSight Learner",
-            html=_error_html(url),
+            html=_error_html(url, log_path),
             js_api=DesktopApi(),
             width=780,
             height=520,

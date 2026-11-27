@@ -27,10 +27,11 @@
                     <h3 class="section-title mb-0">Explain Portfolio Like I'm 15</h3>
                 </div>
                 <div class="card-body">
-                    <p>{{ explanation.plain_english }}</p>
-                    <p class="text-muted"><strong>Analogy:</strong> {{ explanation.analogy }}</p>
-                    <p class="text-muted"><strong>Why It Moved:</strong> {{ explanation.why_it_moved }}</p>
-                    <ul class="mb-0">
+                    <p data-insight-summary>{{ explanation.plain_english }}</p>
+                    <p data-insight-status role="status">{% if insights_loading %}Loading the full explanation.{% endif %}</p>
+                    <p class="text-muted"><strong>Analogy:</strong> <span data-insight-analogy>{{ explanation.analogy }}</span></p>
+                    <p class="text-muted"><strong>Why It Moved:</strong> <span data-insight-move>{{ explanation.why_it_moved }}</span></p>
+                    <ul class="mb-0" data-insight-steps>
                         {% for row in explanation.next_steps %}
                         <li>{{ row }}</li>
                         {% endfor %}
@@ -44,17 +45,12 @@
                     <h3 class="section-title mb-0">Why Portfolio Moved Today</h3>
                 </div>
                 <div class="card-body">
-                    <ul>
-                        {% for row in move_why.drivers %}
-                        <li>{{ row }}</li>
-                        {% endfor %}
-                    </ul>
-                    <div class="row g-2">
-                        {% for item in move_why.headlines %}
-                        <div class="col-md-6">
-                            <a href="{{ item.link }}" target="_blank" rel="noopener">{{ item.title }}</a>
-                            <div class="small text-muted">{{ item.source }}</div>
-                        </div>
+                    <ul data-insight-drivers>{% for driver in move_why.drivers %}<li>{{ driver }}</li>{% endfor %}</ul>
+                    <div class="row g-2" data-insight-headlines>
+                        {% for headline in move_why.headlines %}
+                        {% if headline.link and headline.link.startswith(('http://', 'https://')) %}
+                        <div class="col-md-6"><a href="{{ headline.link }}" target="_blank" rel="noopener">{{ headline.title }}</a><div class="small text-muted">{{ headline.source or '' }}</div></div>
+                        {% endif %}
                         {% endfor %}
                     </div>
                 </div>
@@ -62,4 +58,50 @@
         </div>
     </div>
 </div>
+{% if insights_loading %}
+<script>
+(async () => {
+    const status = document.querySelector('[data-insight-status]');
+    const write = (key, value) => {
+        if (value) document.querySelector('[data-insight-' + key + ']').textContent = value;
+    };
+    const list = (key, rows) => {
+        if (!Array.isArray(rows)) return;
+        document.querySelector('[data-insight-' + key + ']').replaceChildren(...rows.map((text) => {
+            const item = document.createElement('li');
+            item.textContent = text;
+            return item;
+        }));
+    };
+    try {
+        const response = await fetch('/api/portfolio/insights-detail');
+        if (!response.ok) throw new Error('Portfolio details unavailable');
+        const { explanation, move_why } = await response.json();
+        write('summary', explanation.plain_english);
+        write('analogy', explanation.analogy);
+        write('move', explanation.why_it_moved);
+        list('steps', explanation.next_steps);
+        list('drivers', move_why.drivers);
+        for (const headline of move_why.headlines || []) {
+            if (!/^https?:\/\//i.test(headline.link || '')) continue;
+            const item = document.createElement('div');
+            item.className = 'col-md-6';
+            const link = document.createElement('a');
+            link.href = headline.link;
+            link.target = '_blank';
+            link.rel = 'noopener';
+            link.textContent = headline.title;
+            const source = document.createElement('div');
+            source.className = 'small text-muted';
+            source.textContent = headline.source || '';
+            item.append(link, source);
+            document.querySelector('[data-insight-headlines]').append(item);
+        }
+        status.textContent = '';
+    } catch {
+        status.textContent = 'The full explanation is unavailable. Your portfolio summary is still shown.';
+    }
+})();
+</script>
+{% endif %}
 {% endblock %}

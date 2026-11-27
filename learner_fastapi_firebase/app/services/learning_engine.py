@@ -72,8 +72,8 @@ class LearningEngine:
             return portfolio
         return self.repo.refresh_position_prices(uid, market, latest_quotes)
 
-    def dashboard(self, uid: str, market: str) -> dict[str, Any]:
-        portfolio = self._refresh_portfolio_prices(uid, market)
+    def dashboard(self, uid: str, market: str, *, refresh_prices: bool = True) -> dict[str, Any]:
+        portfolio = self._refresh_portfolio_prices(uid, market) if refresh_prices else self.repo.get_portfolio(uid, market)
         perf = self.repo.get_portfolio_performance(uid, market)
         progress = self.repo.get_learning_doc(uid, "progress", default={"completed_modules": 0, "total_modules": 20})
         completed = int(progress.get("completed_modules", 0))

@@ -117,7 +117,7 @@ def build_ai_user_context(
     if learning_engine is not None:
         learning.update(
             {
-                "dashboard": _safe_call(learning_engine.dashboard, uid, market, default={}) or {},
+                "dashboard": _safe_call(learning_engine.dashboard, uid, market, refresh_prices=False, default={}) or {},
                 "health": _safe_call(learning_engine.health_score, uid, market, default={}) or {},
                 "mistakes": _safe_call(learning_engine.mistake_detection, uid, market, default={}) or {},
                 "weekly_summary": _safe_call(learning_engine.weekly_summary, uid, market, default={}) or {},

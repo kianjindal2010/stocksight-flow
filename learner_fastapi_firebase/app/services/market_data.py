@@ -53,7 +53,7 @@ class MarketDataService:
         self._session.mount("https://", adapter)
         self._cache_ttl_seconds = {
             "quote": min(30, max(20, self.cache_seconds)),
-            "quote_history": min(60, max(45, self.cache_seconds)),
+            "quote_history": min(300, max(45, self.cache_seconds)),
             "market_news": 60,
             "stock_news": 60,
             "rss": 60,
@@ -349,15 +349,31 @@ class MarketDataService:
                 "price": round(price, 4),
                 "change_pct": round(change_pct, 2),
                 "currency": SUPPORTED_MARKETS.get(market, SUPPORTED_MARKETS["US"])["currency"],
+                "financial_currency": info.get("financialCurrency"),
                 "summary": info.get("longBusinessSummary", ""),
                 "sector": info.get("sector", ""),
-                "market_cap": info.get("marketCap"),
+                "market_cap": info.get("marketCap") or fast.get("marketCap"),
                 "volume": info.get("volume"),
                 "day_high": info.get("dayHigh") or info.get("regularMarketDayHigh"),
                 "day_low": info.get("dayLow") or info.get("regularMarketDayLow"),
                 "fifty_two_week_high": info.get("fiftyTwoWeekHigh"),
                 "fifty_two_week_low": info.get("fiftyTwoWeekLow"),
                 "pe_ratio": info.get("trailingPE") or info.get("forwardPE"),
+                "ratios": {
+                    key: float(info[field]) * scale
+                    for key, (field, scale) in {
+                        "trailing_pe": ("trailingPE", 1), "forward_pe": ("forwardPE", 1),
+                        "price_book": ("priceToBook", 1), "price_sales": ("priceToSalesTrailing12Months", 1),
+                        "peg": ("trailingPegRatio", 1), "ev_ebitda": ("enterpriseToEbitda", 1),
+                        "ev_revenue": ("enterpriseToRevenue", 1), "gross_margin": ("grossMargins", 100),
+                        "operating_margin": ("operatingMargins", 100), "profit_margin": ("profitMargins", 100),
+                        "roe": ("returnOnEquity", 100), "roa": ("returnOnAssets", 100),
+                        "current_ratio": ("currentRatio", 1), "quick_ratio": ("quickRatio", 1),
+                        "debt_equity": ("debtToEquity", 0.01), "revenue_growth": ("revenueGrowth", 100),
+                        "earnings_growth": ("earningsGrowth", 100),
+                    }.items()
+                    if isinstance(info.get(field), (int, float)) and math.isfinite(info[field])
+                },
                 "dividend_yield_pct": dividend_yield_pct,
                 "beta": info.get("beta"),
             }
@@ -366,6 +382,51 @@ class MarketDataService:
             cache_key,
             lambda: self._timed_upstream("quote", _fetch_quote, market=market, symbol=symbol),
         )
+
+    def annual_financials(self, symbol: str, market: str) -> list[dict]:
+        symbol = self.normalize_symbol(symbol, market)
+
+        def fetch() -> list[dict]:
+            ticker = yf.Ticker(symbol)
+            quote = self.quote(symbol, market)
+            currency = quote.get("financial_currency") or ""
+            statements = (
+                (ticker.get_income_stmt, (
+                    ("TotalRevenue", "Revenue", currency),
+                    ("OperatingIncome", "Operating income", currency),
+                    ("GrossProfit", "Gross profit", currency),
+                    ("NetIncome", "Net income", currency),
+                    ("DilutedEPS", "Diluted EPS", f"{currency} per share".strip()),
+                )),
+                (ticker.get_cash_flow, (("OperatingCashFlow", "Operating cash flow", currency),)),
+                (ticker.get_balance_sheet, (
+                    ("CurrentAssets", "Current assets", currency),
+                    ("CurrentLiabilities", "Current liabilities", currency),
+                    ("TotalAssets", "Total assets", currency),
+                    ("StockholdersEquity", "Equity", currency),
+                    ("TotalDebt", "Total debt", currency),
+                )),
+            )
+            metrics = []
+            for get_statement, fields in statements:
+                try:
+                    frame = get_statement(freq="yearly")
+                except Exception:
+                    logger.info("Annual statement unavailable for %s", symbol, exc_info=True)
+                    continue
+                for field, label, unit in fields:
+                    if field not in frame.index:
+                        continue
+                    points = [
+                        {"end": end.strftime("%Y-%m-%d"), "value": float(value)}
+                        for end, value in frame.loc[field].dropna().items()
+                        if pd.notna(end) and math.isfinite(float(value))
+                    ]
+                    if points:
+                        metrics.append({"label": label, "unit": unit, "points": sorted(points, key=lambda point: point["end"])[-6:]})
+            return metrics
+
+        return self._coalesced_fetch(f"annual_financials:{market}:{symbol}", fetch)
 
     def quote_history(self, symbol: str, market: str, period: str = "1y", interval: str = "1d") -> dict:
         symbol = self.normalize_symbol(symbol, market)

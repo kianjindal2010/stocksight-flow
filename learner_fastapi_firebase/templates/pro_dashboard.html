@@ -1,121 +1,121 @@
 {% extends "layout.html" %}
-
-{% block title %} — Pro Research{% endblock %}
-
+{% block title %} - Research Desk{% endblock %}
 {% block main %}
-<section class="pro-hero reveal-up">
-    <div>
-        <p class="pro-eyebrow">STOCKSIGHT PRO / RESEARCH DESK</p>
-        <h2>See the market<br><em>in context.</em></h2>
-        <p class="pro-lede">A source-aware research workspace for your paper portfolio. Verified data and unverified community discussion are kept visibly separate.</p>
-    </div>
-    <div class="pro-hero-stat">
-        <span>Benchmark</span>
-        <strong>{{ benchmark.name or "Market" }}</strong>
-        <b class="{% if (benchmark.change_pct or 0) >= 0 %}performance-up{% else %}performance-down{% endif %}">{{ "%+.2f"|format(benchmark.change_pct or 0) }}%</b>
-        <small>Latest available session</small>
-    </div>
-</section>
-
-<section class="pro-marquee reveal-up" aria-label="Pro workspace categories">
-    <span>RESEARCH</span><i></i><span>FILINGS</span><i></i><span>CATALYSTS</span><i></i><span>PORTFOLIO CONTEXT</span><i></i><span>COMMUNITY PULSE <b>UNVERIFIED</b></span>
-</section>
-
-<section class="pro-grid pro-grid-top">
-    <article class="pro-panel pro-pulse reveal-up">
-        <div class="pro-panel-kicker">01 / Market pulse</div>
-        <h3>{{ market_pulse.label or "Market context" }}</h3>
-        <p>{{ market_pulse.summary or "Market context will appear when the latest feed is available." }}</p>
-        <a href="/quote" class="pro-text-link">Open Flow Quick Quote <span>↗</span></a>
-    </article>
-    <article class="pro-panel pro-exposure reveal-up">
-        <div class="pro-panel-kicker">02 / Portfolio exposure</div>
-        <div class="pro-number">{{ positions|length }}</div>
-        <p>Open paper positions shared with Flow. Pro never changes your trades without your action.</p>
-        <a href="/portfolio-insights" class="pro-text-link">Inspect Flow portfolio <span>↗</span></a>
-    </article>
-    <article class="pro-panel pro-catalysts reveal-up">
-        <div class="pro-panel-kicker">03 / Research queue</div>
-        {% if research_queue %}
-            <div class="pro-symbol-list">
-            {% for symbol in research_queue %}<a href="/pro/stocks/{{ symbol }}">{{ symbol }} <span>Research ↗</span></a>{% endfor %}
+<div class="research-desk stock-launcher">
+    <header class="desk-heading">
+        <div><h2>Research Desk</h2><p>{{ market_name }}</p></div>
+        <form method="get" action="/pro/stocks" class="desk-form">
+            <label class="visually-hidden" for="deskSymbol">Ticker symbol</label>
+            <input id="deskSymbol" class="form-control" name="symbol" placeholder="Enter ticker" maxlength="16" required>
+            <button class="btn btn-primary" type="submit">Open stock report</button>
+        </form>
+    </header>
+    <div class="desk-layout">
+        <section class="desk-section">
+            <div class="desk-section-head">
+                <h3>Pro watchlist</h3>
+                <form action="/pro/watchlist" method="post" class="desk-form">
+                    <label class="visually-hidden" for="deskWatch">Ticker to add</label>
+                    <input id="deskWatch" name="symbol" class="form-control" placeholder="e.g. NVDA" maxlength="16" required>
+                    <button class="btn btn-outline-secondary" type="submit">Add</button>
+                </form>
             </div>
-        {% else %}
-            <p>Start with a symbol below. Save a thesis, catalysts, and a date to revisit the idea.</p>
-        {% endif %}
-    </article>
-</section>
-
-<section class="pro-research-launch reveal-up">
-    <div>
-        <p class="pro-eyebrow">BUILD A RESEARCH BRIEF</p>
-        <h3>What are you studying?</h3>
+            <ul class="desk-watchlist">
+                {% for symbol in pro_workspace.watchlist_symbols or [] %}
+                <li><a class="desk-stock-link" href="/pro/stocks/{{ symbol|urlencode }}"><strong>{{ symbol }}</strong><span>View stock report</span></a><form action="/pro/watchlist" method="post"><input type="hidden" name="remove_symbol" value="{{ symbol }}"><button class="btn btn-sm btn-link" type="submit" aria-label="Remove {{ symbol }}">Remove</button></form></li>
+                {% else %}<li>Add a ticker to keep its stock report handy.</li>{% endfor %}
+            </ul>
+        </section>
+        <section class="desk-section" aria-labelledby="savedResearchTitle">
+            <h3 id="savedResearchTitle">Saved research</h3>
+            {% set saved_research = pro_workspace.get('research') or {} %}
+            {% for symbol in research_queue %}
+                {% set record = saved_research.get(symbol) or {} %}
+                <a class="desk-record" href="/pro/stocks/{{ symbol|urlencode }}"><strong>{{ symbol }}</strong><span>{{ record.get('thesis')|truncate(96) if record.get('thesis') else 'Open stock report' }}</span>{% if record.get('review_date') %}<time datetime="{{ record.review_date }}">{{ record.review_date|pro_date }}</time>{% endif %}</a>
+            {% else %}<p class="desk-empty">Open a stock report to save research or schedule a review.</p>{% endfor %}
+        </section>
     </div>
-    <form method="get" action="/pro/stocks/" onsubmit="this.action='/pro/stocks/' + encodeURIComponent(this.symbol.value.trim().toUpperCase()); return !!this.symbol.value.trim();">
-        <label class="visually-hidden" for="pro-symbol">Stock symbol</label>
-        <input id="pro-symbol" name="symbol" placeholder="NVDA" maxlength="12" autocomplete="off">
-        <button type="submit">Open Pro research <span>→</span></button>
-    </form>
-</section>
-
-<section class="pro-watchlist-panel reveal-up">
-    <div><p class="pro-eyebrow">PRO WATCHLIST / SEPARATE FROM FLOW</p><h3>Keep research leads in one place.</h3><p>This is intentionally independent from your beginner Flow watchlists.</p></div>
-    <div class="pro-watchlist-content"><form action="/pro/watchlist" method="post"><label class="visually-hidden" for="pro-watchlist-symbol">Symbol to add</label><input id="pro-watchlist-symbol" name="symbol" placeholder="Add symbol, e.g. MSFT" maxlength="16"><button type="submit">Add to Pro watchlist →</button></form><div class="pro-watchlist-chips">{% for symbol in pro_workspace.watchlist_symbols or [] %}<span><a href="/pro/stocks/{{ symbol }}">{{ symbol }}</a><form action="/pro/watchlist" method="post"><input type="hidden" name="remove_symbol" value="{{ symbol }}"><button type="submit" aria-label="Remove {{ symbol }} from Pro watchlist">×</button></form></span>{% else %}<p>No Pro watchlist symbols yet.</p>{% endfor %}</div></div>
-</section>
-
-<section class="pro-intelligence-feed reveal-up" id="proIntelligenceFeed">
-    <div class="pro-feed-heading">
-        <div><p class="pro-eyebrow">LIVE PRO INTELLIGENCE FEED</p><h3>What changed — and why it matters.</h3><p>Verified filings, earnings and attributable news lead. Community attention stays separate and unverified.</p></div>
-        <div class="pro-feed-status"><span data-feed-status>Loading expanded research…</span><button type="button" data-feed-refresh>Refresh feed ↻</button></div>
-    </div>
-    <div class="pro-feed-filters" aria-label="Filter Pro intelligence feed">
-        <button type="button" data-filter="all" aria-pressed="true">All</button><button type="button" data-filter="verified">Verified</button><button type="button" data-filter="filings">Filings</button><button type="button" data-filter="earnings">Earnings</button><button type="button" data-filter="macro">Macro</button><button type="button" data-filter="market">Market</button><button type="button" data-filter="news">News</button><button type="button" data-filter="portfolio">Portfolio impact</button><button type="button" data-filter="community">Community <b>unverified</b></button>
-    </div>
-    <div class="pro-feed-list" data-feed-list>
-        {% for item in feed_items %}
-        <article class="pro-feed-item" data-feed-type="{{ item.type }}" data-feed-verified="{{ 'true' if item.verified else 'false' }}"><div><span class="pro-feed-type">{{ item.type }}</span><a href="{{ item.url }}" target="{% if item.url.startswith('http') %}_blank{% endif %}" rel="noopener"><strong>{{ item.symbol }} · {{ item.title }}</strong></a><p>{{ item.detail }} · {{ item.source }}{% if not item.verified %} · <b>Unverified context only</b>{% endif %}</p></div><div class="pro-feed-actions"><form action="/pro/feed-state" method="post"><input type="hidden" name="item_id" value="{{ item.id }}"><input type="hidden" name="action" value="save"><input type="date" name="review_date" value="{{ item.review_date or '' }}"><button type="submit">{{ 'Saved' if item.saved else 'Save' }}</button></form><form action="/pro/feed-state" method="post"><input type="hidden" name="item_id" value="{{ item.id }}"><input type="hidden" name="action" value="dismiss"><button type="submit" aria-label="Dismiss this feed item">×</button></form></div></article>
-        {% else %}<article class="pro-feed-empty">Add a symbol to your Pro watchlist or research queue. Your full feed will then build progressively in the background.</article>{% endfor %}
-    </div>
-</section>
-
-<section class="pro-calendar reveal-up">
-    <div class="pro-section-heading"><p class="pro-eyebrow">YOUR CATALYST CALENDAR</p><h3>Know what you are waiting for.</h3><p>These are your saved review dates and catalyst watch items—not predicted events.</p></div>
-    <div class="pro-calendar-list">
+    {% if catalyst_calendar %}
+    <section class="desk-section">
+        <h3>Review calendar</h3>
         {% for row in catalyst_calendar %}
-        <a href="/pro/stocks/{{ row.symbol }}"><span>{{ row.date }}</span><strong>{{ row.symbol }}</strong><p>{{ row.detail }}</p><i>Open ↗</i></a>
-        {% else %}
-        <div class="pro-calendar-empty"><strong>No catalysts saved yet.</strong><p>Open a Pro stock workspace and save a thesis, catalyst, and review date.</p></div>
+        <a class="desk-review" href="/pro/stocks/{{ row.symbol|urlencode }}"><time>{{ row.date|pro_date }}</time><strong>{{ row.symbol }}</strong><span>{{ row.detail }}</span></a>
         {% endfor %}
-    </div>
-</section>
-
-<section class="pro-attention reveal-up">
-    <div class="pro-section-heading"><p class="pro-eyebrow">WATCH / COMMUNITY ATTENTION</p><h3>Read interest carefully.</h3><p>Discussion is a research lead—not evidence and never an automatic signal.</p></div>
-    <div class="pro-attention-list">
-        {% for row in community_attention %}
-        <article class="pro-attention-row">
-            <a href="/pro/stocks/{{ row.symbol }}"><strong>{{ row.symbol }}</strong><span>Open research ↗</span></a>
-            {% if row.news %}<p>{{ row.news[0].title }}</p>{% else %}<p>No current headline snapshot. Open the workspace to refresh.</p>{% endif %}
-            <small>Community Pulse — Unverified</small>
-        </article>
-        {% else %}
-        <article class="pro-attention-row empty"><strong>Your queue is clear.</strong><p>Open a stock above to begin an evidence-led research brief.</p></article>
-        {% endfor %}
-    </div>
-</section>
-
+    </section>
+    {% endif %}
+    <details class="desk-section desk-updates" id="proIntelligenceFeed" {% if flash == "Pro feed preference saved." %}open{% endif %}>
+        <summary>Source updates</summary>
+        <div class="desk-section-head"><p class="desk-status" data-feed-status role="status"></p><button class="btn btn-sm btn-outline-secondary" type="button" data-feed-refresh>Refresh</button></div>
+        <div class="desk-filters" aria-label="Filter updates">
+            {% for key, label in [('all', 'All'), ('verified', 'Verified'), ('filings', 'Filings'), ('earnings', 'Earnings'), ('macro', 'Economy'), ('market', 'Market'), ('news', 'News'), ('portfolio', 'Portfolio'), ('community', 'Community (unverified)')] %}
+            <button type="button" data-filter="{{ key }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ label }}</button>
+            {% endfor %}
+        </div>
+        <div data-feed-list></div>
+    </details>
+</div>
 <script>
 (() => {
-  const root = document.getElementById('proIntelligenceFeed'); if (!root) return;
-  const list = root.querySelector('[data-feed-list]'); const status = root.querySelector('[data-feed-status]'); let active = 'all';
-  const esc = (v) => String(v || '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const render = (items) => {
-    const shown = items.filter((item) => active === 'all' || (active === 'verified' ? item.verified : item.type === active));
-    list.innerHTML = shown.length ? shown.map((item) => `<article class="pro-feed-item" data-feed-type="${esc(item.type)}" data-feed-verified="${item.verified ? 'true' : 'false'}"><div><span class="pro-feed-type">${esc(item.type)}</span><a href="${esc(item.url || '#')}" ${String(item.url || '').startsWith('http') ? 'target="_blank" rel="noopener"' : ''}><strong>${esc(item.symbol)} · ${esc(item.title)}</strong></a><p>${esc(item.detail)} · ${esc(item.source)}${item.verified ? '' : ' · <b>Unverified context only</b>'}</p></div><div class="pro-feed-actions"><form action="/pro/feed-state" method="post"><input type="hidden" name="item_id" value="${esc(item.id)}"><input type="hidden" name="action" value="save"><input type="date" name="review_date" value="${esc(item.review_date)}"><button type="submit">${item.saved ? 'Saved' : 'Save'}</button></form><form action="/pro/feed-state" method="post"><input type="hidden" name="item_id" value="${esc(item.id)}"><input type="hidden" name="action" value="dismiss"><button type="submit" aria-label="Dismiss this feed item">×</button></form></div></article>`).join('') : '<article class="pro-feed-empty">No matching items in this feed filter.</article>';
-  };
-  const load = async () => { status.textContent = 'Refreshing source-labelled research…'; try { const response = await fetch('/api/pro/intelligence-feed', { credentials: 'include' }); const payload = await response.json(); if (!response.ok) throw new Error(payload.detail || 'Feed unavailable'); render(payload.items || []); status.textContent = `Updated ${new Date(payload.generated_at).toLocaleTimeString()}`; } catch (error) { status.textContent = `Using current feed · ${error.message}`; } };
-  root.querySelectorAll('[data-filter]').forEach((button) => button.addEventListener('click', () => { active = button.dataset.filter; root.querySelectorAll('[data-filter]').forEach((item) => item.setAttribute('aria-pressed', String(item === button))); load(); }));
-  root.querySelector('[data-feed-refresh]').addEventListener('click', load); load();
+    const root = document.getElementById("proIntelligenceFeed");
+    const list = root.querySelector("[data-feed-list]");
+    const status = root.querySelector("[data-feed-status]");
+    const refreshButton = root.querySelector("[data-feed-refresh]");
+    const filters = [...root.querySelectorAll("[data-filter]")];
+    const formatter = new Intl.DateTimeFormat("en-GB", {dateStyle: "medium", timeZone: "UTC"});
+    const cleanDates = (value) => String(value || "").replace(/\b\d{4}-\d{2}-\d{2}\b/g, (iso) => {
+        const day = new Date(iso + "T00:00:00Z");
+        return Number.isNaN(+day) ? iso : formatter.format(day);
+    });
+    const esc = (value) => String(value || "").replace(/[&<>"']/g, (ch) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[ch]);
+    let active = "all";
+    let items = [];
+    let loaded = false;
+    const render = () => {
+        const shown = items.filter((item) => active === "all" || (active === "verified" ? item.verified : item.type === active));
+        list.innerHTML = shown.map((item) => {
+            const url = String(item.url || "");
+            const external = /^https?:\/\//i.test(url);
+            const href = external || /^\/pro\/stocks\//.test(url) ? url : "#";
+            const reviewDate = cleanDates(item.review_date);
+            const id = esc(item.id);
+            return `<article class="desk-feed-row">
+                <a href="${esc(href)}" ${external ? 'target="_blank" rel="noopener"' : ""}><strong>${esc(item.symbol)} · ${esc(cleanDates(item.title))}</strong></a>
+                <p>${esc(cleanDates(item.detail))} · ${esc(item.source)}${item.verified ? "" : " · Unverified"}</p>
+                <div class="desk-feed-actions">
+                    <form action="/pro/feed-state" method="post"><input type="hidden" name="item_id" value="${id}"><input type="hidden" name="action" value="save"><button type="submit">${item.saved ? "Saved" : "Save"}</button></form>
+                    <form action="/pro/feed-state" method="post"><input type="hidden" name="item_id" value="${id}"><input type="hidden" name="action" value="dismiss"><button type="submit">Dismiss</button></form>
+                    <details><summary>${reviewDate ? "Review: " + esc(reviewDate) : "Set review date"}</summary>
+                        <form action="/pro/feed-state" method="post"><input type="hidden" name="item_id" value="${id}"><input type="hidden" name="action" value="save"><input name="review_date" aria-label="Review date. Example: 25 Nov 2026" value="${esc(reviewDate)}" placeholder="25 Nov 2026" required maxlength="20"><button type="submit">Save date</button></form>
+                    </details>
+                </div></article>`;
+        }).join("") || '<p class="desk-empty">No updates match this filter.</p>';
+    };
+    async function load(refresh = false) {
+        if (refreshButton.disabled) return;
+        refreshButton.disabled = true;
+        status.textContent = "Loading updates.";
+        try {
+            const response = await fetch("/api/pro/intelligence-feed" + (refresh ? "?refresh=1" : ""));
+            if (!response.ok) throw new Error("Updates are temporarily unavailable.");
+            const payload = await response.json();
+            items = payload.items || [];
+            loaded = true;
+            render();
+            status.textContent = payload.symbols?.length ? "" : "Add a stock to see its source updates.";
+        } catch (error) {
+            status.textContent = error.message;
+        } finally {
+            refreshButton.disabled = false;
+        }
+    }
+    filters.forEach((button) => button.addEventListener("click", () => {
+        active = button.dataset.filter;
+        filters.forEach((option) => option.setAttribute("aria-pressed", String(button === option)));
+        if (loaded) render();
+    }));
+    root.addEventListener("toggle", () => { if (root.open && !loaded) load(); });
+    refreshButton.addEventListener("click", () => load(true));
+    if (root.open) load();
 })();
 </script>
 {% endblock %}

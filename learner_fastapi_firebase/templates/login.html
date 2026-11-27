@@ -4,54 +4,35 @@
 
 {% block guest_main %}
 {% set auth_mode = "signup" if request.query_params.get("mode") == "signup" else "login" %}
-<style>
-.login-shell { max-width: 1040px; margin: 0 auto; display: grid; grid-template-columns: 1fr minmax(320px,460px); gap: 1rem; align-items: stretch; }
-.login-brand-panel { border-radius: 22px; padding: 1.45rem 1.55rem; background: linear-gradient(135deg,#1d4ed8,#0b1220); color: #fff; box-shadow: 0 24px 38px rgba(11,18,32,.24); }
-.login-card { border-radius: 22px; border: 1px solid rgba(15,23,42,.1); padding: 1.45rem; background: rgba(255,255,255,.92); box-shadow: 0 18px 34px rgba(15,23,42,.1); }
-.auth-mode-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; padding: .35rem; border: 1px solid rgba(15,23,42,.1); border-radius: 14px; background: rgba(15,23,42,.04); }
-.auth-mode-toggle .btn { border-radius: 10px; }
-.auth-panel[hidden] { display: none !important; }
-@media (max-width: 920px) { .login-shell { grid-template-columns: 1fr; } }
-</style>
 <div class="login-shell" data-initial-mode="{{ auth_mode }}">
-    <section class="login-brand-panel">
-        <h1>Welcome to StockSight Learner</h1>
-        <p>Secure account access with a learner-first market workspace.</p>
-        <div class="login-highlights">
-            <span>Paper trading only</span>
-            <span>Guided curriculum and feedback</span>
-            <span>No pro/admin complexity</span>
-        </div>
-    </section>
-    <section class="login-card">
-        <div class="auth-mode-toggle mb-3" role="tablist" aria-label="Choose auth mode">
-            <button class="btn btn-sm {% if auth_mode == 'login' %}btn-primary{% else %}btn-outline-secondary{% endif %}" type="button" data-auth-mode="login" aria-selected="{{ 'true' if auth_mode == 'login' else 'false' }}">Sign in</button>
-            <button class="btn btn-sm {% if auth_mode == 'signup' %}btn-primary{% else %}btn-outline-secondary{% endif %}" type="button" data-auth-mode="signup" aria-selected="{{ 'true' if auth_mode == 'signup' else 'false' }}">Create account</button>
+    <section class="login-card" aria-labelledby="loginTitle">
+        <header class="login-heading">
+            <img src="/static/stocksight-logo.png" width="36" height="36" alt="">
+            <h1 id="loginTitle">StockSight Learner</h1>
+        </header>
+        <div class="auth-mode-toggle mb-3" role="group" aria-label="Account access">
+            <button class="btn btn-sm {% if auth_mode == 'login' %}btn-primary{% else %}btn-outline-secondary{% endif %}" type="button" data-auth-mode="login" aria-pressed="{{ 'true' if auth_mode == 'login' else 'false' }}">Sign in</button>
+            <button class="btn btn-sm {% if auth_mode == 'signup' %}btn-primary{% else %}btn-outline-secondary{% endif %}" type="button" data-auth-mode="signup" aria-pressed="{{ 'true' if auth_mode == 'signup' else 'false' }}">Create account</button>
         </div>
 
         <form id="signinForm" class="auth-panel" data-auth-panel="login" {% if auth_mode == "signup" %}hidden{% endif %}>
-            <h2>Sign in</h2>
-            <p>Use your StockSight email/password, or continue with Google.</p>
             <div class="mb-3"><label class="form-label" for="loginEmail">Email</label><input id="loginEmail" class="form-control" type="email" autocomplete="email" required></div>
             <div class="mb-3"><label class="form-label" for="loginPassword">Password</label><input id="loginPassword" class="form-control" type="password" autocomplete="current-password" required></div>
-            <button class="btn btn-primary" type="submit">Log In</button>
+            <button class="btn btn-primary" type="submit">Sign in</button>
             <button class="btn btn-link btn-sm px-0 ms-2" id="forgotPasswordBtn" type="button">Forgot password?</button>
         </form>
 
         <form id="signupForm" class="auth-panel" data-auth-panel="signup" {% if auth_mode != "signup" %}hidden{% endif %}>
-            <h2>Create account</h2>
-            <p>Start a guided paper-trading workspace with email/password.</p>
             <div class="mb-3"><label class="form-label" for="signupDisplayName">Display name</label><input id="signupDisplayName" class="form-control" type="text" autocomplete="name"></div>
             <div class="mb-3"><label class="form-label" for="signupWorkspaceName">Workspace name</label><input id="signupWorkspaceName" class="form-control" value="Trading Workspace" type="text"></div>
             <div class="mb-3"><label class="form-label" for="signupEmail">Email</label><input id="signupEmail" class="form-control" type="email" autocomplete="email" required></div>
             <div class="mb-3"><label class="form-label" for="signupPassword">Password</label><input id="signupPassword" class="form-control" type="password" autocomplete="new-password" minlength="6" required></div>
-            <button class="btn btn-primary" type="submit">Create Account</button>
+            <button class="btn btn-primary" type="submit">Create account</button>
         </form>
 
         {% if appwrite_project_id %}
         <hr>
         <button class="btn btn-outline-primary btn-sm" id="googleBtn" type="button">Continue with Google</button>
-        <p class="small text-muted mt-2 mb-0">Use the same Google account you used with StockSight before.</p>
         <div id="authMsg" class="small mt-3 text-danger" role="status" aria-live="polite"></div>
         {% else %}
         <hr>
@@ -66,9 +47,6 @@
     </section>
 </div>
 <script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
-import { getAuth, GoogleAuthProvider, getRedirectResult, onAuthStateChanged, signInWithRedirect } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-
 const shell = document.querySelector(".login-shell");
 const msg = document.getElementById("authMsg");
 const webApiKey = {{ firebase_web_api_key|tojson }};
@@ -76,12 +54,8 @@ const projectId = {{ firebase_project_id|tojson }};
 const authDomain = {{ firebase_auth_domain|tojson }};
 const appwriteEnabled = {{ (appwrite_project_id|length > 0)|tojson }};
 let firebaseAuth = null;
+let firebaseSdk = null;
 let googleSignInFinished = false;
-
-if (webApiKey && projectId) {
-    const firebaseApp = initializeApp({ apiKey: webApiKey, projectId: projectId, authDomain: authDomain || `${projectId}.firebaseapp.com` });
-    firebaseAuth = getAuth(firebaseApp);
-}
 
 function setMessage(text, isError = true) {
     msg.textContent = text || "";
@@ -97,7 +71,7 @@ function showMode(mode) {
     });
     document.querySelectorAll("[data-auth-mode]").forEach((button) => {
         const isSelected = button.dataset.authMode === nextMode;
-        button.setAttribute("aria-selected", String(isSelected));
+        button.setAttribute("aria-pressed", String(isSelected));
         button.classList.toggle("btn-primary", isSelected);
         button.classList.toggle("btn-outline-secondary", !isSelected);
     });
@@ -166,10 +140,18 @@ async function openExternalGoogleSignIn() {
     await finishExternalGoogleSignIn(data.state);
 }
 
-if (firebaseAuth) {
+async function setupFirebase() {
+    if (appwriteEnabled || !webApiKey || !projectId) return;
+    const [{ initializeApp }, authSdk] = await Promise.all([
+        import("https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js"),
+        import("https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js"),
+    ]);
+    const firebaseApp = initializeApp({ apiKey: webApiKey, projectId: projectId, authDomain: authDomain || `${projectId}.firebaseapp.com` });
+    firebaseSdk = authSdk;
+    firebaseAuth = authSdk.getAuth(firebaseApp);
     // Some embedded WebView engines restore the Firebase user without returning
     // it from getRedirectResult, so listen for the settled auth state as well.
-    onAuthStateChanged(firebaseAuth, (user) => {
+    firebaseSdk.onAuthStateChanged(firebaseAuth, (user) => {
         if (user && !googleSignInFinished) {
             setMessage("Finishing Google sign-in...");
             finishGoogleSignIn(user).catch((err) => {
@@ -178,7 +160,7 @@ if (firebaseAuth) {
             });
         }
     });
-    getRedirectResult(firebaseAuth)
+    firebaseSdk.getRedirectResult(firebaseAuth)
         .then((result) => {
             if (result && result.user) {
                 setMessage("Finishing Google sign-in...");
@@ -263,10 +245,10 @@ document.getElementById("googleBtn")?.addEventListener("click", async () => {
             await openExternalGoogleSignIn();
             return;
         }
-        const provider = new GoogleAuthProvider();
+        const provider = new firebaseSdk.GoogleAuthProvider();
         provider.setCustomParameters({ prompt: "select_account" });
         setMessage("Opening Google sign-in...");
-        await signInWithRedirect(firebaseAuth, provider);
+        await firebaseSdk.signInWithRedirect(firebaseAuth, provider);
     } catch (err) {
         setMessage(err.message || String(err));
     }
@@ -285,5 +267,6 @@ document.getElementById("googleTokenBtn")?.addEventListener("click", async () =>
         setMessage(err.message || "Google token login failed");
     }
 });
+setupFirebase().catch(() => setMessage("Google sign-in could not load. You can still sign in with email."));
 </script>
 {% endblock %}
